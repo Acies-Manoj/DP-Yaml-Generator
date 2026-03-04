@@ -1,0 +1,81 @@
+{
+  "table_description": "The buildings table contains information about various buildings, including their location, facilities, and other relevant details. It can be used for analytical purposes such as location analysis, facility type analysis, and building ownership analysis.",
+  "columns": [
+    {
+      "name": "building_eid",
+      "description": "The building_eid column uniquely identifies records and serves as a unique identifier for each building, allowing for analysis of individual building data."
+    },
+    {
+      "name": "building_number",
+      "description": "The building_number column contains a string value representing the building number, which can be used to identify a specific building or group of buildings for analytical purposes."
+    },
+    {
+      "name": "building_name",
+      "description": "The building_name column contains a string value representing the name of the building, which can be used to identify a specific building or group of buildings for analytical purposes."
+    },
+    {
+      "name": "building_facility_type",
+      "description": "The building_facility_type column contains a string value representing the type of facility, which can be used to analyze the distribution of different facility types across buildings."
+    },
+    {
+      "name": "building_ownership_type",
+      "description": "The building_ownership_type column contains a string value representing the ownership type of the building, which can be used to analyze the distribution of different ownership types across buildings."
+    },
+    {
+      "name": "building_full_address",
+      "description": "The building_full_address column contains a string value representing the full address of the building, which can be used for location-based analysis and data visualization."
+    },
+    {
+      "name": "city",
+      "description": "The city column contains a string value representing the city where the building is located, which can be used for location-based analysis and data aggregation."
+    },
+    {
+      "name": "state",
+      "description": "The state column contains a string value representing the state where the building is located, which can be used for location-based analysis and data aggregation."
+    },
+    {
+      "name": "zip_code",
+      "description": "The zip_code column uniquely identifies records and serves as a primary key, allowing for analysis of building data by zip code and enabling data integration with other datasets."
+    },
+    {
+      "name": "building_latitude",
+      "description": "The building_latitude column contains a numeric value representing the latitude of the building, which can be used for geospatial analysis and data visualization."
+    },
+    {
+      "name": "building_longitude",
+      "description": "The building_longitude column contains a numeric value representing the longitude of the building, which can be used for geospatial analysis and data visualization."
+    },
+    {
+      "name": "active_in",
+      "description": "The active_in column contains a boolean value indicating whether the building is active, which can be used to filter or segment building data for analysis."
+    },
+    {
+      "name": "active_units_count",
+      "description": "The active_units_count column contains a numeric value representing the number of active units in the building, which can be used to analyze the capacity and utilization of buildings."
+    },
+    {
+      "name": "unit_count",
+      "description": "The unit_count column contains a numeric value representing the total number of units in the building, which can be used to analyze the size and scale of buildings."
+    },
+    {
+      "name": "is_single_elevator",
+      "description": "The is_single_elevator column contains a boolean value indicating whether the building has a single elevator, which can be used to analyze the accessibility and infrastructure of buildings."
+    },
+    {
+      "name": "geo_type",
+      "description": "The geo_type column contains a string value representing the geographic type, which can be used to analyze the distribution of different geographic types across buildings, although the meaning of this column is somewhat ambiguous without additional context."
+    },
+    {
+      "name": "geo_price",
+      "description": "The geo_price column contains a string value representing the geographic price, which can be used to analyze the distribution of different prices across buildings, although the meaning of this column is somewhat ambiguous without additional context."
+    },
+    {
+      "name": "update_date",
+      "description": "The update_date column contains a timestamp value representing the date and time when the building data was last updated, which can be used to track changes and updates to building data over time."
+    },
+    {
+      "name": "building_row_number",
+      "description": "The building_row_number column contains a numeric value representing the row number of the building, which can be used to identify a specific building or group of buildings for analytical purposes, although its exact meaning is somewhat ambiguous without additional context."
+    }
+  ]
+}

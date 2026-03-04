@@ -1,0 +1,41 @@
+{
+  "table_description": "The BRANCH table stores information about different branches, with a composite primary key consisting of branch_id, region_code, subregion_code, and office_code. It provides details about the geographical location and administrative codes of each branch.",
+  "columns": [
+    {
+      "name": "branch_id",
+      "description": "The branch_id column uniquely identifies records in the table, serving as part of the primary key to distinguish between different branches."
+    },
+    {
+      "name": "gsscore_servicebranchnumber",
+      "description": "The gsscore_servicebranchnumber column stores a string value that may represent a service branch number, potentially used for analytical purposes to track or categorize branches."
+    },
+    {
+      "name": "region_code",
+      "description": "The region_code column is part of the primary key and likely represents a code for the region where the branch is located, allowing for analysis by geographical region."
+    },
+    {
+      "name": "region",
+      "description": "The region column stores the name of the region where the branch is located, which can be used for analytical purposes such as grouping or filtering branches by region."
+    },
+    {
+      "name": "subregion_code",
+      "description": "The subregion_code column is part of the primary key and probably represents a code for a subregion within a larger region, enabling more detailed geographical analysis of branches."
+    },
+    {
+      "name": "subregion",
+      "description": "The subregion column contains the name of the subregion where the branch is located, which can be used to analyze or report on branches at a subregional level."
+    },
+    {
+      "name": "gbo",
+      "description": "The gbo column stores a string value that may represent some form of geographical or administrative code, but its specific purpose is ambiguous without additional context."
+    },
+    {
+      "name": "office_code",
+      "description": "The office_code column is part of the primary key and likely represents a unique code for an office within a branch, allowing for detailed analysis or tracking of specific offices."
+    },
+    {
+      "name": "office_name",
+      "description": "The office_name column stores the name of the office, which can be used for analytical purposes such as filtering or grouping branches by office name, providing a more detailed level of administrative categorization."
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "table_description": "The opportunity_unit table stores information about business opportunities, including their status, priority, and related identifiers. It appears to be used for tracking and analyzing sales opportunities.",
+  "columns": [
+    {
+      "name": "opportunity_id",
+      "description": "The opportunity_id column uniquely identifies records in the table, serving as a primary key to distinguish between different opportunities."
+    },
+    {
+      "name": "rnk",
+      "description": "The rnk column contains a numerical ranking, potentially used for sorting or prioritizing opportunities based on their value or potential."
+    },
+    {
+      "name": "priority",
+      "description": "The priority column stores a string indicating the priority level of an opportunity, which can be used for filtering or categorizing opportunities based on their urgency or importance."
+    },
+    {
+      "name": "opportunity_name",
+      "description": "The opportunity_name column contains a string describing the name of the opportunity, providing a human-readable identifier for the opportunity."
+    },
+    {
+      "name": "opportunity_status",
+      "description": "The opportunity_status column stores a string indicating the current status of the opportunity, such as pending, closed, or in progress, which can be used for tracking the opportunity's lifecycle."
+    },
+    {
+      "name": "gsscore_iscancellationalert",
+      "description": "The gsscore_iscancellationalert column contains a boolean value indicating whether a cancellation alert has been triggered, which can be used to identify opportunities at risk of being cancelled."
+    },
+    {
+      "name": "gsscore_proposaldelivered",
+      "description": "The gsscore_proposaldelivered column stores a boolean value indicating whether a proposal has been delivered, which can be used to track the progress of the sales process."
+    },
+    {
+      "name": "actualclosedate",
+      "description": "The actualclosedate column contains a string representing the date when the opportunity was actually closed, which can be used for analyzing the opportunity's timeline and performance."
+    },
+    {
+      "name": "quote_id",
+      "description": "The quote_id column uniquely identifies records in the table, serving as a primary key to distinguish between different quotes related to opportunities."
+    },
+    {
+      "name": "gsscore_torderprimaryproduct",
+      "description": "The gsscore_torderprimaryproduct column stores a string describing the primary product related to the opportunity, which can be used for analyzing the types of products being sold or proposed."
+    },
+    {
+      "name": "gsscore_businessstream",
+      "description": "The gsscore_businessstream column contains a string indicating the business stream or category associated with the opportunity, which can be used for categorizing and analyzing opportunities by business segment."
+    },
+    {
+      "name": "gsscore_utmcampaign",
+      "description": "The gsscore_utmcampaign column stores a string representing the marketing campaign related to the opportunity, which can be used for tracking the effectiveness of different marketing campaigns."
+    },
+    {
+      "name": "unit_erp_number",
+      "description": "The unit_erp_number column contains a string representing the ERP number of the unit, which can be used to reference or integrate with external enterprise resource planning systems."
+    },
+    {
+      "name": "contract_erp_number",
+      "description": "The contract_erp_number column stores a string representing the ERP number of the contract, which can be used to reference or integrate with external enterprise resource planning systems, potentially referencing a specific contract or agreement."
+    }
+  ]
+}
