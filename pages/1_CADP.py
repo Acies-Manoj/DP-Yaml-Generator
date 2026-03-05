@@ -38,7 +38,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("CADP Builder")
+if st.session_state.get("sm_origin") == "cadp_full":
+    st.title("Semantic Model — Step 2 of CADP")
+else:
+    st.title("Semantic Model")
 
 if "sm_mode" not in st.session_state:
     st.session_state.sm_mode = None
