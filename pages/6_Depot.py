@@ -14,6 +14,8 @@ from utils.depot_generators import (
 )
 
 st.set_page_config(page_title="Depot Builder", layout="wide")
+from utils.ui_utils import load_global_css
+load_global_css()
 
 st.markdown("""
 <style>

@@ -63,8 +63,8 @@ def render_step2():
                     _tbl_desc = _data.get("table_description", "")
                     if _tbl_desc:
                         tables[tidx]["tbl_desc"] = _tbl_desc
-                        # Clear widget cache so text_area re-reads the new value
-                        st.session_state.pop(f"b_tbl_desc_{tidx}", None)
+                        # Directly set widget state so it re-renders with new value
+                        st.session_state[f"b_tbl_desc_{tidx}"] = _tbl_desc
                     # Write each column description directly into dims
                     _col_descs = {
                         c["name"].lower(): c["description"]
@@ -74,8 +74,8 @@ def render_step2():
                         _desc = _col_descs.get(dim["name"].lower(), "")
                         if _desc:
                             tables[tidx]["dims"][j]["description"] = _desc
-                            # Clear widget cache so text_input re-reads the new value
-                            st.session_state.pop(f"b_dd_{tidx}_{j}", None)
+                            # Directly set widget state so it re-renders with new value
+                            st.session_state[f"b_dd_{tidx}_{j}"] = _desc
                     st.rerun()
 
         st.markdown("#### Table Metadata")

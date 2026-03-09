@@ -6,6 +6,8 @@ from utils.generators import generate_sadp_spec_yaml
 from utils.examples import EXAMPLE_SPEC, show_example
 
 st.set_page_config(page_title="SADP — Spec", layout="wide")
+from utils.ui_utils import load_global_css
+load_global_css()
 
 st.markdown("""
 <style>

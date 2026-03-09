@@ -1,8 +1,13 @@
 """
 description_ui.py — Streamlit UI for the Description Engine.
 
-UI shows ONLY a model selector dropdown.
-Provider and API key are read from utils/description_engine/config.py — not entered in UI.
+UI shows:
+  - Provider label (read-only, from config)
+  - Model dropdown
+  - Profiling / cache toggles
+  - Optional business context input
+  - Generate All button with progress bar
+  - Per-table editable description results
 """
 
 import streamlit as st
@@ -102,6 +107,8 @@ def render_description_panel(
         help="Select which model to use for generating descriptions.",
     )
 
+
+
     # ── Optional profiling toggle ─────────────────────────────────────────────
     use_profiling = st.toggle(
         "Enable column profiling (sample values, null % from Snowflake)",
@@ -118,15 +125,85 @@ def render_description_panel(
 
     st.divider()
 
+    # ── Business Context (optional) ───────────────────────────────────────────
+    _ctx_key = f"{key_prefix}_user_context"
+
+    st.markdown(
+        """
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+            <span style="font-size:15px;">💡</span>
+            <span style="font-size:13px; font-weight:600; color:#d1d5db;">Business Context</span>
+            <span style="font-size:10px; font-weight:600; color:#6b7280;
+                         background:#1f2937; border:1px solid #374151;
+                         padding:2px 8px; border-radius:999px;
+                         text-transform:uppercase; letter-spacing:0.05em;">
+                Optional
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.caption(
+        "Tell the LLM what this data actually represents. "
+        "Especially useful when the table name doesn't reflect the content "
+        "— e.g. `t_001`, `stg_xyz`, `tmp_final_v3`."
+    )
+
+    user_context_input = st.text_area(
+        label="business_context_hidden",
+        label_visibility="collapsed",
+        placeholder=(
+            "e.g. This table contains daily B2B sales orders from our Salesforce CRM pipeline. "
+            "Each row represents one order line item with pricing, region, and fulfillment status."
+        ),
+        key=_ctx_key,
+        max_chars=400,
+        height=90,
+        help="Max 400 characters. Leave blank to use default LLM behaviour based on column names only.",
+    )
+
+    _ctx_value = (user_context_input or "").strip()
+
+    # Character counter + quick-fill examples when empty
+    if _ctx_value:
+        st.caption(f"✅ Context active — {len(_ctx_value)}/400 characters")
+    else:
+        st.caption("No context provided — LLM will infer from column names and types only.")
+        st.markdown(
+            "<div style='font-size:11px; color:#4b5563; margin-top:4px; margin-bottom:4px;'>"
+            "QUICK EXAMPLES — click to copy into the box above:"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        _examples = [
+            "B2B orders from Salesforce CRM",
+            "Daily snapshot of inventory levels",
+            "User clickstream events from mobile app",
+            "Financial transactions in USD",
+        ]
+        _ex_cols = st.columns(len(_examples))
+        for _col, _ex in zip(_ex_cols, _examples):
+            with _col:
+                st.code(_ex, language=None)
+
+    st.divider()
+
     # ── Generate All button ───────────────────────────────────────────────────
+    _btn_label = (
+        f"✨ Generate Descriptions for All {len(tables)} Table(s)"
+        + (" · with context" if _ctx_value else "")
+    )
+
     col_gen, col_clear = st.columns([3, 1])
 
     with col_gen:
         generate_clicked = st.button(
-            f"✨ Generate Descriptions for All {len(tables)} Table(s)",
+            _btn_label,
             key=f"{key_prefix}_gen_all",
             type="primary",
             use_container_width=True,
+            help="Context will be sent to the LLM along with column metadata." if _ctx_value else None,
         )
 
     with col_clear:
@@ -158,6 +235,7 @@ def render_description_panel(
                 use_profiling=use_profiling,
                 use_cache=use_cache,
                 progress_cb=_progress,
+                user_context=_ctx_value or None,   # ← pass context; None = default behaviour
             )
             st.session_state[results_key] = results
 
@@ -165,7 +243,11 @@ def render_description_panel(
             if errors:
                 st.warning(f"Completed with errors on: {', '.join(errors)}. Check your API key or model.")
             else:
-                st.success(f"Descriptions ready for {len(tables)} table(s). Review and edit below, then click 'Preview Table YAML'.")
+                _success_note = " (with your business context)" if _ctx_value else ""
+                st.success(
+                    f"Descriptions ready for {len(tables)} table(s){_success_note}. "
+                    "Review and edit below, then click 'Auto-fill Descriptions'."
+                )
 
         except Exception as e:
             if "api_key" in str(e).lower() or "authentication" in str(e).lower():

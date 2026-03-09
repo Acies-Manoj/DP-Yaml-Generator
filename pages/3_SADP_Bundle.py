@@ -6,6 +6,8 @@ from utils.generators import generate_sadp_bundle_yaml
 from utils.examples import EXAMPLE_BUNDLE, show_example
 
 st.set_page_config(page_title="SADP — Bundle", layout="wide")
+from utils.ui_utils import load_global_css
+load_global_css()
 
 st.markdown("""
 <style>

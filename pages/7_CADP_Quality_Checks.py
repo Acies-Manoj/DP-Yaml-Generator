@@ -1,474 +1,760 @@
+"""
+Quality Checks — Shared QC Generator (CADP & SADP)
+Connects to Snowflake live, generates deterministic checks,
+runs LLM suggestions, and exports a Soda workflow YAML.
+Routed to from both cadp_flow.py (step 3) and sadp_flow.py (step 2).
+"""
+
 import streamlit as st
+import json
 import sys, os
+import pandas as pd
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from utils.qc_utils import (
-    build_default_checks,
-    generate_qc_excel,
-    parse_qc_excel,
-    generate_qc_yaml,
+from utils.ui_utils import load_global_css, section_header, app_footer
+from utils.sf_utils import (
+    connect, fetch_databases, fetch_schemas,
+    fetch_tables, fetch_full_context, fetch_schema_overview,
 )
+from utils.default_checks import generate_default_checks
+from utils.llm_checks import call_llm
+from utils.qc_yaml_generator import generate_qc_yaml
+from utils.qc_config import PROVIDER, GROQ_DEFAULT_MODEL, OLLAMA_DEFAULT_MODEL
 
-st.set_page_config(page_title="CADP — Quality Checks", page_icon="✅", layout="wide")
-
-st.markdown("""
-<style>
-.stButton>button { width: 100%; height: 45px; border-radius: 8px; font-size: 15px; }
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="Quality Checks — QC Generator", page_icon="✅", layout="wide")
+load_global_css()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STATE INIT
+# CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
-QC_KEYS = [
-    "qc_step", "qc_default_rows", "qc_custom_checks",
-    "qc_generated_yaml", "qc_dataset_ref", "qc_name",
-    "qc_uploaded_rows",
+CATEGORIES = [
+    ("Schema",       "🔷", "#1e3a5f", "#93c5fd"),
+    ("Completeness", "🟢", "#14532d", "#86efac"),
+    ("Uniqueness",   "🟣", "#3b0764", "#d8b4fe"),
+    ("Freshness",    "🟡", "#78350f", "#fcd34d"),
+    ("Validity",     "🩷", "#4a1d4a", "#f9a8d4"),
+    ("Accuracy",     "🩵", "#134e4a", "#6ee7b7"),
 ]
+CAT_NAMES = [c[0] for c in CATEGORIES]
 
-for k, v in [
-    ("qc_step", 1),
-]:
+# ─────────────────────────────────────────────────────────────────────────────
+# SESSION STATE
+# ─────────────────────────────────────────────────────────────────────────────
+_QC_DEFAULTS = {
+    "qc_sf_conn": None, "qc_sf_databases": [], "qc_sf_last_db": "",
+    "qc_sf_schemas": [], "qc_sf_last_schema": "", "qc_sf_tables": [],
+    "qc_sf_last_table": "",
+    "qc_ctx": None, "qc_default_checks": [], "qc_llm_suggestions": [],
+    "qc_accepted_defaults": {}, "qc_accepted_llm": {},
+    "qc_manual_checks": {}, "qc_accepted_manual": {},
+    "qc_show_manual_form": False,
+    "qc_llm_done": False, "qc_llm_error": None, "qc_llm_sm_injected": False,
+    "qc_wf_name": "", "qc_wf_desc": "", "qc_wf_depot": "",
+    "qc_wf_workspace": "public", "qc_wf_engine": "", "qc_wf_cluster": "",
+    "qc_wf_tag_domain": "", "qc_wf_tag_usecase": "",
+    "qc_wf_tag_tier": "Consumer Aligned",
+    "qc_wf_tag_region": "", "qc_wf_tag_dataos": "", "qc_wf_tag_custom": "",
+    "qc_last_yaml": None, "qc_last_yaml_name": "",
+}
+for k, v in _QC_DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-_origin = st.session_state.get("cadp_qc_origin", "specific")
+# Separate manual checks per table to avoid conflicts
+def _manual_key():
+    return f"qc_manual_{st.session_state.get('qc_sf_last_table','')}"
+
+def _accepted_manual_key():
+    return f"qc_acc_manual_{st.session_state.get('qc_sf_last_table','')}"
+
+def reset_table_state():
+    for k in ["qc_ctx", "qc_default_checks", "qc_llm_suggestions",
+              "qc_accepted_defaults", "qc_accepted_llm",
+              "qc_llm_done", "qc_llm_error",
+              "qc_last_yaml", "qc_last_yaml_name"]:
+        st.session_state[k] = _QC_DEFAULTS.get(k, None) or ([] if "checks" in k or "suggestions" in k else {} if "accepted" in k else None)
+
+def checks_by_category(checks):
+    out = {cat: [] for cat in CAT_NAMES}
+    for i, chk in enumerate(checks):
+        cat = chk.get("category", "Schema")
+        if cat in out:
+            out[cat].append((i, chk))
+    return out
+
+def syntax_preview(chk):
+    s = chk.get("syntax", "")
+    body = chk.get("body") or {}
+    if s == "schema":
+        if "warn" in body:
+            cols = body["warn"].get("when required column missing", [])
+            snip = ", ".join(str(c) for c in cols[:4])
+            more = f" ... +{len(cols)-4}" if len(cols) > 4 else ""
+            return f"schema: warn when required column missing: [{snip}{more}]"
+        if "fail" in body:
+            n = len(body["fail"].get("when wrong column type", {}))
+            return f"schema: fail when wrong column type: ({n} columns)"
+    parts = [s]
+    for k, v in body.items():
+        parts.append(f"  {k}: {v}")
+    return "\n".join(parts)
+
+# Resolve origin — supports cadp_full, sadp_full, or specific (standalone)
+_origin = (
+    st.session_state.get("cadp_qc_origin")
+    or st.session_state.get("sadp_qc_origin")
+    or "specific"
+)
+_is_sadp = _origin == "sadp_full"
+_is_cadp = _origin == "cadp_full"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Pull ALL tables from bundle_tables — let user pick which one to work on
+# HEADER + NAV
 # ─────────────────────────────────────────────────────────────────────────────
-_bundle_tables = st.session_state.get("bundle_tables", [])
-_valid_tables  = [t for t in _bundle_tables if t.get("name") and t.get("dims")]
-
-# Fallback: individual / old-style session keys
-_fallback_dims  = st.session_state.get("bundle_tbl_dims") or st.session_state.get("tbl_dimensions") or []
-_fallback_name  = (st.session_state.get("bundle_tbl_name", "") or st.session_state.get("tbl_name_for_file", "") or st.session_state.get("ind_sf_last_table", "")).strip()
-_fallback_db    = (st.session_state.get("bundle_db", "") or st.session_state.get("ind_sf_last_db", "")).strip()
-_fallback_schema= (st.session_state.get("bundle_schema", "") or st.session_state.get("ind_sf_last_schema", "")).strip()
-
-if _valid_tables:
-    # ── Table selector ────────────────────────────────────────────────────────
-    _completed = st.session_state.get("qc_completed_tables", set())   # set of table names already done
-    _labels = [
-        ("✅ " if t["name"] in _completed else "") + f"{t.get('schema','')}.{t['name']}  ({len(t['dims'])} cols)"
-        for t in _valid_tables
-    ]
-    # Default selection: first table not yet completed, or first table
-    _default_idx = next(
-        (i for i, t in enumerate(_valid_tables) if t["name"] not in _completed), 0
-    )
-    _prev_idx = st.session_state.get("qc_selected_table_idx", _default_idx)
-
-    _sel_label = st.selectbox(
-        "Select table to generate Quality Checks for:",
-        _labels,
-        index=_prev_idx,
-        key="qc_table_selector",
-    )
-    _sel_idx = _labels.index(_sel_label)
-
-    # If user switched to a different table — clear step state so they start fresh
-    if _sel_idx != st.session_state.get("qc_selected_table_idx", _sel_idx):
-        for k in ["qc_step","qc_default_rows","qc_custom_checks","qc_generated_yaml",
-                  "qc_dataset_ref","qc_name","qc_uploaded_rows","qc_table_name",
-                  "qc_workspace","qc_engine","qc_cluster_name"]:
-            st.session_state.pop(k, None)
-        st.session_state.qc_step = 1
-
-    st.session_state.qc_selected_table_idx = _sel_idx
-    _sel_table  = _valid_tables[_sel_idx]
-    _dims       = _sel_table["dims"]
-    _table_name = _sel_table["name"].strip()
-    _db         = _sel_table.get("db", "").strip()
-    _schema     = _sel_table.get("schema", "").strip()
-
-    # Progress badge
-    if _completed:
-        st.caption(f"✅ Done: {', '.join(f'`{n}`' for n in _completed)}  |  "
-                   f"⏳ Remaining: {len(_valid_tables) - len(_completed)} of {len(_valid_tables)}")
-    st.markdown(" ")
-
-else:
-    # Individual / fallback mode — no table selector needed
-    _dims, _table_name, _db, _schema = _fallback_dims, _fallback_name, _fallback_db, _fallback_schema
-
-# Auto-build dataset ref
-_auto_dataset_ref = f"dataos://icebase:{_schema}/{_table_name}" if _schema and _table_name else ""
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# NAV
-# ─────────────────────────────────────────────────────────────────────────────
-def _back():
-    for k in QC_KEYS:
-        st.session_state.pop(k, None)
-    if _origin == "cadp_full":
-        st.switch_page("pages/cadp_flow.py")
-    else:
-        st.switch_page("pages/1_CADP.py")
+st.markdown("## ✅ Quality Checks")
+st.markdown(
+    '<p style="color:#6b7280;font-size:13px;margin-top:-8px;">'
+    'Connect to Snowflake, auto-generate checks, review LLM suggestions, and export YAML.'
+    '</p>',
+    unsafe_allow_html=True,
+)
 
 nav_l, _, nav_r = st.columns([1, 4, 1.5])
 with nav_l:
     if st.button("← Back"):
-        _back()
+        if _is_cadp:
+            st.switch_page("pages/cadp_flow.py")
+        elif _is_sadp:
+            st.switch_page("pages/sadp_flow.py")
+        else:
+            st.switch_page("app.py")
 with nav_r:
-    if st.button("✖ Cancel / Start Over"):
-        for k in QC_KEYS:
-            st.session_state.pop(k, None)
+    if st.button("🔄 Start Over"):
+        for k in list(_QC_DEFAULTS.keys()):
+            st.session_state[k] = _QC_DEFAULTS[k]
         st.rerun()
 
+model_label = GROQ_DEFAULT_MODEL if PROVIDER == "groq" else OLLAMA_DEFAULT_MODEL
+st.markdown(
+    f'<div style="background:#111827;border:1px solid #1f2937;border-radius:8px;'
+    f'padding:8px 14px;font-size:12px;color:#6b7280;margin:8px 0;">'
+    f'⚙️ LLM Provider: <b style="color:#d1d5db">{PROVIDER.upper()}</b> &nbsp;|&nbsp; '
+    f'Model: <b style="color:#d1d5db">{model_label}</b> &nbsp;|&nbsp; '
+    f'Edit in <b style="color:#d1d5db">utils/qc_config.py</b></div>',
+    unsafe_allow_html=True,
+)
 st.divider()
 
-step = st.session_state.qc_step
-STEP_LABELS = ["1. Configure & Download", "2. Upload & Preview", "3. Review & Download YAML"]
-st.progress((step - 1) / 3, text=f"Step {step} of 3 — {STEP_LABELS[step - 1]}")
-st.markdown(" ")
+# ─────────────────────────────────────────────────────────────────────────────
+# ① SNOWFLAKE CONNECTION
+# ─────────────────────────────────────────────────────────────────────────────
+section_header("🔗", "Snowflake Connection")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 1 — Configure & Download Excel
-# ══════════════════════════════════════════════════════════════════════════════
-if step == 1:
-    st.subheader("Step 1 — Configure & Download Quality Checks Sheet")
+# Try to reuse connection from depot step
+if st.session_state.qc_sf_conn is None and st.session_state.get("sf_conn"):
+    st.session_state.qc_sf_conn = st.session_state.sf_conn
+    try:
+        st.session_state.qc_sf_databases = fetch_databases(st.session_state.qc_sf_conn)
+        st.success("✅ Reusing Snowflake connection from Depot step.")
+    except Exception:
+        st.session_state.qc_sf_conn = None
 
-    # ── Context info ──────────────────────────────────────────────────────────
-    if _table_name and _dims:
-        st.success(
-            f"✅ **{len(_dims)} dimensions** loaded from Semantic Model "
-            f"(table: `{_table_name}`). Pre-filled into the sheet automatically."
-        )
-    elif _table_name and not _dims:
-        st.warning(
-            "Table name found but no dimensions — complete the Semantic Model "
-            "Table YAML step first to pre-fill columns."
-        )
-    else:
-        st.info(
-            "No Semantic Model context found. You can still enter table details "
-            "manually below and download a blank sheet."
-        )
-
-    st.markdown(" ")
-
-    with st.form("qc_config_form"):
-        st.markdown("#### Quality Check Configuration")
-        cf1, cf2 = st.columns(2)
-        with cf1:
-            qc_name = st.text_input(
-                "Quality Check Name *",
-                value=f"soda-{_table_name.lower()}-quality" if _table_name else "",
-                placeholder="e.g. soda-customer-quality",
-                help="Used as the workflow name in the generated YAML.",
-            )
-            table_name_input = st.text_input(
-                "Table Name *",
-                value=_table_name,
-                placeholder="e.g. CUSTOMER",
-                help="The table these checks apply to.",
-                disabled=bool(_table_name),
-            )
-        with cf2:
-            dataset_ref = st.text_input(
-                "Dataset Reference *",
-                value=_auto_dataset_ref,
-                placeholder="e.g. dataos://icebase:retail/customer",
-                help="Format: dataos://<depot>:<collection>/<table>",
-            )
-            workspace = st.text_input(
-                "Workspace",
-                value="public",
-                placeholder="e.g. public",
-                help="DataOS workspace to deploy the workflow in.",
-            )
-
-        st.markdown("#### Compute Options")
-        co1, co2 = st.columns(2)
-        with co1:
-            engine = st.text_input(
-                "Engine",
-                value="minerva",
-                placeholder="e.g. minerva",
-                help="Query engine to use (minerva, themis, etc.)",
-            )
-        with co2:
-            cluster_name = st.text_input(
-                "Cluster Name",
-                value="",
-                placeholder="e.g. snowflakeclustertest02",
-                help="Optional. The specific cluster to run queries on.",
-            )
-
-        st.markdown(" ")
-        submit = st.form_submit_button("⬇ Generate & Download Excel Sheet", use_container_width=True)
-
-    if submit:
-        tbl = (table_name_input or _table_name).strip()
-        if not tbl:
-            st.error("Table Name is required.")
-        elif not qc_name.strip():
-            st.error("Quality Check Name is required.")
-        elif not dataset_ref.strip():
-            st.error("Dataset Reference is required.")
+if st.session_state.qc_sf_conn is None:
+    with st.form("qc_sf_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            sf_acct = st.text_input("Account Identifier *", placeholder="abc12345.us-east-1.aws")
+            sf_user = st.text_input("Username *", placeholder="john_doe")
+        with c2:
+            sf_pw   = st.text_input("Password *", type="password")
+            sf_role = st.text_input("Role (optional)", placeholder="SYSADMIN")
+            sf_wh   = st.text_input("Warehouse (optional)", placeholder="COMPUTE_WH")
+        go = st.form_submit_button("Connect", use_container_width=True, type="primary")
+    if go:
+        if not sf_acct or not sf_user or not sf_pw:
+            st.error("Account, username and password are required.")
         else:
-            # Use dims from session state, or empty if none
-            dims_to_use = _dims if _dims else []
-            default_rows = build_default_checks(dims_to_use, tbl)
-
-            # Store for later steps
-            st.session_state.qc_default_rows = default_rows
-            st.session_state.qc_dataset_ref  = dataset_ref.strip()
-            st.session_state.qc_name         = qc_name.strip()
-            st.session_state.qc_table_name   = tbl
-            st.session_state.qc_workspace    = workspace.strip() or "public"
-            st.session_state.qc_engine       = engine.strip() or "minerva"
-            st.session_state.qc_cluster_name = cluster_name.strip()
-
-            xls_bytes = generate_qc_excel(dims_to_use, tbl)
-
-            st.success("✅ Sheet generated! Download it, fill in the `custom_checks` column, then come back to upload.")
-            st.markdown(" ")
-            st.download_button(
-                label="⬇ Download Quality Checks Sheet (.xlsx)",
-                data=xls_bytes,
-                file_name=f"{tbl}_quality_checks.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-
-            # Show preview of what's pre-filled
-            st.markdown(" ")
-            st.markdown("**Pre-filled default checks:**")
-            import pandas as pd
-            preview_df = pd.DataFrame(default_rows)[["column_name", "dataos_type", "default_checks"]]
-            st.dataframe(preview_df, use_container_width=True, hide_index=True)
-
-            st.markdown(" ")
-            col1, _ = st.columns([1, 2])
-            with col1:
-                if st.button("Next: Upload Filled Sheet →", type="primary", use_container_width=True):
-                    st.session_state.qc_step = 2
+            with st.spinner("Connecting..."):
+                try:
+                    conn = connect(sf_acct.strip(), sf_user.strip(), sf_pw,
+                                   sf_role.strip(), sf_wh.strip())
+                    st.session_state.qc_sf_conn      = conn
+                    st.session_state.qc_sf_databases = fetch_databases(conn)
                     st.rerun()
+                except Exception as e:
+                    st.error(f"Connection failed: {e}")
+    st.stop()
 
-    # Quick nav if already configured
-    elif st.session_state.get("qc_default_rows"):
-        st.markdown(" ")
-        if st.button("Next: Upload Filled Sheet →", type="primary"):
-            st.session_state.qc_step = 2
-            st.rerun()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — Upload & Preview
-# ══════════════════════════════════════════════════════════════════════════════
-elif step == 2:
-    st.subheader("Step 2 — Upload Filled Sheet & Preview Checks")
-
-    st.info(
-        "Upload the Excel sheet you downloaded and filled in. "
-        "The app will read your `custom_checks` column and combine them with the defaults."
-    )
-
-    # ── Syntax reminder ───────────────────────────────────────────────────────
-    with st.expander("📖 Custom checks syntax reminder"):
-        st.markdown("""
-Use the **`custom_checks`** column (yellow) on each column's row. Separate multiple checks with ` | `.
-
-| Keyword | Example | What it does |
-|---|---|---|
-| `missing_count=N` | `missing_count=0` | Nulls must be ≤ N |
-| `missing_percent=N` | `missing_percent=5` | Null % must be ≤ N |
-| `duplicate_count=N` | `duplicate_count=0` | Duplicates must be ≤ N |
-| `freshness=Nd` | `freshness=1d` | Data not older than N days |
-| `valid_values=A,B,C` | `valid_values=CASH,CARD,UPI` | Allowed values (comma-separated) |
-| `min=N` | `min=0` | Minimum numeric value |
-| `max=N` | `max=999999` | Maximum numeric value |
-| `regex=PATTERN` | `regex=^[A-Z]{3}$` | Column must match regex |
-| `failed_rows=SQL` | `failed_rows=amount != price * qty` | Custom SQL condition |
-
-**Multiple checks:** `missing_count=0 | valid_values=CASH,CARD,UPI | min=0`
-        """)
-
-    st.markdown(" ")
-    uploaded = st.file_uploader(
-        "Upload your filled Quality Checks sheet",
-        type=["xlsx"],
-        key="qc_upload",
-    )
-
-    if uploaded:
-        try:
-            result = parse_qc_excel(uploaded.read())
-            st.session_state.qc_uploaded_rows  = result["default_rows"]
-            st.session_state.qc_custom_checks  = result["custom_checks"]
-
-            default_rows  = result["default_rows"]
-            custom_checks = result["custom_checks"]
-
-            st.success(f"✅ Sheet parsed — {len(custom_checks)} custom check(s) found.")
-            st.markdown(" ")
-
-            # ── Show all checks preview ───────────────────────────────────────
-            st.markdown("#### All Checks Preview")
-
-            tab_default, tab_custom, tab_combined = st.tabs(
-                ["Default Checks", "Your Custom Checks", "Combined (all)"]
-            )
-
-            import pandas as pd
-
-            with tab_default:
-                st.caption("These are auto-generated from your semantic model dimensions.")
-                df_def = pd.DataFrame(default_rows)[["column_name", "dataos_type", "default_checks"]]
-                st.dataframe(df_def, use_container_width=True, hide_index=True)
-
-            with tab_custom:
-                if custom_checks:
-                    st.caption("Custom checks parsed from your `custom_checks` column.")
-                    df_cust = pd.DataFrame(custom_checks)
-                    st.dataframe(df_cust, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No custom checks found. Add entries in the `custom_checks` column and re-upload.")
-
-            with tab_combined:
-                st.caption("This is what will be written to the YAML.")
-                combined_rows = []
-                for row in default_rows:
-                    col = row["column_name"]
-                    def_chks = row["default_checks"]
-                    cust_chks = row["custom_checks"]
-                    combined_rows.append({
-                        "column":         col,
-                        "type":           row["dataos_type"],
-                        "default_checks": def_chks,
-                        "custom_checks":  cust_chks if cust_chks else "—",
-                    })
-                st.dataframe(pd.DataFrame(combined_rows), use_container_width=True, hide_index=True)
-
-            st.markdown(" ")
-            if st.button("Next: Generate YAML →", type="primary", use_container_width=True):
-                # Generate YAML using stored default rows + parsed custom checks
-                table_name = st.session_state.get("qc_table_name", _table_name)
-                yaml_out = generate_qc_yaml(
-                    default_rows=result["default_rows"],
-                    custom_checks=result["custom_checks"],
-                    table_name=table_name,
-                    dataset_ref=st.session_state.get("qc_dataset_ref", ""),
-                    qc_name=st.session_state.get("qc_name", f"{table_name}-qc"),
-                    workspace=st.session_state.get("qc_workspace", "public"),
-                    engine=st.session_state.get("qc_engine", "minerva"),
-                    cluster_name=st.session_state.get("qc_cluster_name", ""),
-                )
-                st.session_state.qc_generated_yaml = yaml_out
-                st.session_state.qc_step = 3
-                st.rerun()
-
-        except Exception as e:
-            st.error(f"Failed to parse the uploaded file: {e}")
-
-    # Option to skip custom checks and proceed with defaults only
-    st.markdown("---")
-    st.caption("Don't have custom checks to add? You can proceed with default checks only.")
-    if st.button("Skip — use default checks only →"):
-        default_rows = st.session_state.get("qc_default_rows", [])
-        table_name   = st.session_state.get("qc_table_name", _table_name)
-        yaml_out = generate_qc_yaml(
-            default_rows=default_rows,
-            custom_checks=[],
-            table_name=table_name,
-            dataset_ref=st.session_state.get("qc_dataset_ref", ""),
-            qc_name=st.session_state.get("qc_name", f"{table_name}-qc"),
-            workspace=st.session_state.get("qc_workspace", "public"),
-            engine=st.session_state.get("qc_engine", "minerva"),
-            cluster_name=st.session_state.get("qc_cluster_name", ""),
-        )
-        st.session_state.qc_generated_yaml = yaml_out
-        st.session_state.qc_step = 3
+hdr_c, disc_c = st.columns([8, 1])
+with hdr_c:
+    st.success("✅ Connected to Snowflake")
+with disc_c:
+    if st.button("Disconnect"):
+        for k in list(_QC_DEFAULTS.keys()):
+            st.session_state[k] = _QC_DEFAULTS[k]
         st.rerun()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ② TABLE SELECTION
+# ─────────────────────────────────────────────────────────────────────────────
+st.divider()
+section_header("🗄️", "Select Table")
+conn = st.session_state.qc_sf_conn
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 3 — Review & Download YAML
-# ══════════════════════════════════════════════════════════════════════════════
-elif step == 3:
-    st.subheader("Step 3 — Review & Download Quality Checks YAML")
+d1, d2, d3 = st.columns(3)
+with d1:
+    db_opts = ["— select —"] + st.session_state.qc_sf_databases
+    db_idx  = db_opts.index(st.session_state.qc_sf_last_db) if st.session_state.qc_sf_last_db in db_opts else 0
+    sel_db  = st.selectbox("Database", db_opts, index=db_idx)
+    if sel_db != "— select —" and sel_db != st.session_state.qc_sf_last_db:
+        st.session_state.qc_sf_last_db     = sel_db
+        st.session_state.qc_sf_schemas     = fetch_schemas(conn, sel_db)
+        st.session_state.qc_sf_last_schema = ""
+        st.session_state.qc_sf_tables      = []
+        st.session_state.qc_sf_last_table  = ""
+        reset_table_state()
+        st.rerun()
 
-    yaml_out   = st.session_state.get("qc_generated_yaml", "")
-    qc_name    = st.session_state.get("qc_name", "quality-checks")
-    table_name = st.session_state.get("qc_table_name", _table_name)
+with d2:
+    sc_opts = ["— select —"] + st.session_state.qc_sf_schemas
+    sc_idx  = sc_opts.index(st.session_state.qc_sf_last_schema) if st.session_state.qc_sf_last_schema in sc_opts else 0
+    sel_sc  = st.selectbox("Schema", sc_opts, index=sc_idx, disabled=not st.session_state.qc_sf_schemas)
+    if sel_sc != "— select —" and sel_sc != st.session_state.qc_sf_last_schema:
+        st.session_state.qc_sf_last_schema = sel_sc
+        st.session_state.qc_sf_tables      = fetch_tables(conn, st.session_state.qc_sf_last_db, sel_sc)
+        st.session_state.qc_sf_last_table  = ""
+        reset_table_state()
+        st.rerun()
 
-    custom_count  = len(st.session_state.get("qc_custom_checks", []))
-    uploaded_rows = st.session_state.get("qc_uploaded_rows", st.session_state.get("qc_default_rows", []))
-    default_count = sum(
-        1 for row in uploaded_rows
-        for token in row.get("default_checks", "").split("|") if token.strip()
+with d3:
+    tb_opts = ["— select —"] + st.session_state.qc_sf_tables
+    tb_idx  = tb_opts.index(st.session_state.qc_sf_last_table) if st.session_state.qc_sf_last_table in tb_opts else 0
+    sel_tb  = st.selectbox("Table", tb_opts, index=tb_idx, disabled=not st.session_state.qc_sf_tables)
+    if sel_tb != "— select —" and sel_tb != st.session_state.qc_sf_last_table:
+        st.session_state.qc_sf_last_table = sel_tb
+        reset_table_state()
+        with st.spinner(f"Pulling schema & profiling for {sel_tb}..."):
+            try:
+                ctx = fetch_full_context(conn, st.session_state.qc_sf_last_db,
+                                         st.session_state.qc_sf_last_schema, sel_tb)
+                ctx["schema_overview"] = fetch_schema_overview(
+                    conn, st.session_state.qc_sf_last_db, st.session_state.qc_sf_last_schema)
+                st.session_state.qc_ctx = ctx
+                defs = generate_default_checks(ctx)
+                for chk in defs:
+                    chk["_original"] = {"name": chk.get("name"), "syntax": chk.get("syntax"),
+                                        "body": json.dumps(chk.get("body"), sort_keys=True)}
+                st.session_state.qc_default_checks   = defs
+                st.session_state.qc_accepted_defaults = {i: True for i in range(len(defs))}
+                if ctx["errors"]:
+                    for err in ctx["errors"]:
+                        st.warning(f"⚠️ {err}")
+            except Exception as e:
+                st.error(f"Failed to fetch table context: {e}")
+        st.rerun()
+
+if not st.session_state.qc_ctx:
+    st.stop()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ③ CHECKS REVIEW
+# ─────────────────────────────────────────────────────────────────────────────
+ctx = st.session_state.qc_ctx
+st.divider()
+section_header("🔍", f"Quality Checks — {ctx['table']}")
+
+ic, wc = st.columns([3, 3])
+with ic:
+    st.caption(f"📊 {len(ctx['columns'])} columns · ~{ctx['row_count'] or '?'} rows sampled")
+if ctx["errors"]:
+    with wc:
+        with st.expander(f"⚠️ {len(ctx['errors'])} data-pull warning(s)"):
+            for e in ctx["errors"]:
+                st.caption(f"• {e}")
+
+# ── Optional metadata upload ──────────────────────────────────────────────────
+with st.expander("🧠 Upload Metadata for Advanced LLM Checks (optional)"):
+    uploaded_meta = st.file_uploader(
+        "Upload Excel with table & column descriptions",
+        type=["xlsx"], key="qc_meta_upload",
+    )
+    semantic_metadata = None
+    if uploaded_meta:
+        try:
+            df_meta = pd.read_excel(uploaded_meta)
+            required = {"table_name", "table_description", "column_name", "column_description"}
+            if not required.issubset(set(df_meta.columns)):
+                st.error("Excel format invalid — required columns missing.")
+            else:
+                semantic_metadata = df_meta
+                st.success(f"✅ {len(df_meta)} metadata rows loaded.")
+        except Exception as e:
+            st.error(f"Failed to read metadata: {e}")
+
+st.markdown(" ")
+
+# ── LLM controls ──────────────────────────────────────────────────────────────
+
+# Check if any descriptions are actually available to offer the toggle
+_bundle_tables    = st.session_state.get("bundle_tables", [])
+_matched_sm_table = next(
+    (t for t in _bundle_tables
+     if t.get("name", "").strip().upper() == ctx["table"].strip().upper()),
+    None,
+) if _is_cadp else None
+_has_sm_desc = bool(
+    _matched_sm_table and (
+        _matched_sm_table.get("tbl_desc") or
+        any(d.get("description", "").strip() for d in _matched_sm_table.get("dims", []))
+    )
+)
+
+llm_c1, llm_c2 = st.columns([4, 1])
+with llm_c1:
+    llm_label = "✨ Generate LLM Suggestions" if not st.session_state.qc_llm_done else "🔄 Re-run LLM Suggestions"
+    run_llm = st.button(llm_label, type="primary", use_container_width=True)
+with llm_c2:
+    if st.button("Clear LLM", use_container_width=True):
+        st.session_state.qc_llm_suggestions = []
+        st.session_state.qc_accepted_llm    = {}
+        st.session_state.qc_llm_done        = False
+        st.session_state.qc_llm_error       = None
+        st.rerun()
+
+# Show description toggle only when descriptions are actually available
+_use_sm_desc = False
+if _has_sm_desc:
+    _use_sm_desc = st.toggle(
+        "📝 Send Semantic Model descriptions to LLM",
+        value=True,
+        help="When on, the table and column descriptions you generated in the Semantic Model "
+             "step are sent to the LLM — producing more accurate, domain-aware check suggestions. "
+             "Turn off to let the LLM reason from column names and profiling stats only.",
     )
 
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        st.metric("Default Checks", default_count)
-    with col_b:
-        st.metric("Custom Checks", custom_count)
-    with col_c:
-        st.metric("Total Assertions", default_count + custom_count)
+if run_llm:
+    with st.spinner("Calling LLM..."):
+        try:
+            ctx_for_llm = ctx.copy()
 
-    st.markdown(" ")
-    st.code(yaml_out, language="yaml")
-    st.markdown(" ")
+            # ── Priority 1: inject descriptions from Semantic Model (CADP only) ──
+            # bundle_tables[i] has: {"name", "tbl_desc", "dims": [{"name", "description", ...}]}
+            # We match on table name (case-insensitive) and inject into ctx_for_llm columns.
+            _sm_injected = False
+            if _is_cadp and _use_sm_desc and _matched_sm_table:
+                # Table-level description
+                if _matched_sm_table.get("tbl_desc"):
+                    ctx_for_llm["table_description"] = _matched_sm_table["tbl_desc"]
+                # Column-level descriptions — build lookup by name
+                _dim_desc = {
+                    d["name"].strip().upper(): d.get("description", "")
+                    for d in _matched_sm_table.get("dims", [])
+                    if d.get("description", "").strip()
+                }
+                if _dim_desc:
+                    for col in ctx_for_llm["columns"]:
+                        desc = _dim_desc.get(col["name"].strip().upper(), "")
+                        if desc:
+                            col["description"] = desc
+                _sm_injected = bool(_matched_sm_table.get("tbl_desc") or _dim_desc)
 
-    dl1, dl2 = st.columns(2)
-    with dl1:
+            # ── Priority 2: Excel metadata upload (fallback / SADP override) ──
+            if semantic_metadata is not None:
+                tbl_rows = semantic_metadata[semantic_metadata["table_name"] == ctx["table"]]
+                if not tbl_rows.empty:
+                    ctx_for_llm["table_description"] = tbl_rows.iloc[0]["table_description"]
+                    col_desc = dict(zip(tbl_rows["column_name"], tbl_rows["column_description"]))
+                    for col in ctx_for_llm["columns"]:
+                        col["description"] = col_desc.get(col["name"], "")
+                    _sm_injected = True
+
+            suggs = call_llm(ctx_for_llm, st.session_state.qc_default_checks)
+            for chk in suggs:
+                chk["_original"] = {"name": chk.get("name"), "syntax": chk.get("syntax"),
+                                    "body": json.dumps(chk.get("body"), sort_keys=True)}
+            st.session_state.qc_llm_suggestions  = suggs
+            st.session_state.qc_accepted_llm     = {i: False for i in range(len(suggs))}
+            st.session_state.qc_llm_done         = True
+            st.session_state.qc_llm_error        = None
+            st.session_state.qc_llm_sm_injected  = _sm_injected
+        except Exception as e:
+            st.session_state.qc_llm_error = str(e)
+    st.rerun()
+
+if st.session_state.qc_llm_error:
+    st.error(f"LLM error: {st.session_state.qc_llm_error}")
+    st.caption("Check your API key in utils/qc_config.py")
+
+if st.session_state.qc_llm_done and st.session_state.qc_llm_suggestions:
+    _injected = st.session_state.get("qc_llm_sm_injected", False)
+    _context_note = " · enriched with Semantic Model descriptions ✨" if _injected else ""
+    st.success(f"✅ {len(st.session_state.qc_llm_suggestions)} LLM suggestions ready{_context_note} — tick what you want to include.")
+
+# ── Category buckets ──────────────────────────────────────────────────────────
+def_by_cat    = checks_by_category(st.session_state.qc_default_checks)
+llm_by_cat    = checks_by_category(st.session_state.qc_llm_suggestions)
+manual_key    = _manual_key()
+acc_man_key   = _accepted_manual_key()
+manual_checks = st.session_state.get(manual_key, [])
+acc_manual    = st.session_state.get(acc_man_key, {})
+manual_by_cat = checks_by_category(manual_checks)
+
+for cat_name, icon, bg_color, text_color in CATEGORIES:
+    def_items    = def_by_cat.get(cat_name, [])
+    llm_items    = llm_by_cat.get(cat_name, [])
+    manual_items = manual_by_cat.get(cat_name, [])
+    if not def_items and not llm_items and not manual_items:
+        continue
+
+    total_checks = len(def_items) + len(llm_items) + len(manual_items)
+    accepted_count = (
+        sum(1 for i, _ in def_items if st.session_state.qc_accepted_defaults.get(i, True)) +
+        sum(1 for i, _ in llm_items if st.session_state.qc_accepted_llm.get(i, False)) +
+        sum(1 for i, _ in manual_items if acc_manual.get(i, True))
+    )
+
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;'
+        f'border-radius:8px 8px 0 0;margin-top:18px;background:{bg_color};">'
+        f'{icon} <span style="color:{text_color};font-weight:700;font-size:15px;">{cat_name}</span>'
+        f'<span style="color:{text_color};opacity:0.7;font-size:12px;margin-left:8px;">'
+        f'{accepted_count}/{total_checks} selected</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.container():
+        # Default checks
+        if def_items:
+            st.markdown('<span style="font-size:11px;color:#6b7280;font-weight:600;'
+                        'text-transform:uppercase;letter-spacing:0.5px;">Default Checks</span>',
+                        unsafe_allow_html=True)
+            for idx, chk in def_items:
+                col_chk, col_acc = st.columns([0.5, 9.5])
+                with col_acc:
+                    with st.expander(f"[DEFAULT] {chk['col'] or 'table-level'} — {chk['name'][:80]}", expanded=False):
+                        st.markdown('<span style="font-size:10px;font-weight:700;background:#1e3a5f;'
+                                    'color:#93c5fd;padding:1px 7px;border-radius:10px;">DEFAULT</span>',
+                                    unsafe_allow_html=True)
+                        st.code(syntax_preview(chk), language="yaml")
+                        if chk.get("body"):
+                            st.json(chk["body"])
+                        new_syn = st.text_area("Edit SodaCL condition", value=chk["syntax"],
+                                               key=f"{_origin}_def_syn_{idx}", height=60)
+                        st.session_state.qc_default_checks[idx]["syntax"] = new_syn
+                        new_name = st.text_input("Check name", value=chk["name"], key=f"{_origin}_def_name_{idx}")
+                        st.session_state.qc_default_checks[idx]["name"] = new_name
+                        if chk.get("body") and chk["syntax"] != "schema":
+                            body_str = st.text_area("body", value=json.dumps(chk["body"], indent=2),
+                                                    height=80, key=f"{_origin}_def_body_{idx}", label_visibility="collapsed")
+                            try:
+                                st.session_state.qc_default_checks[idx]["body"] = json.loads(body_str)
+                            except Exception:
+                                st.caption("⚠️ Invalid JSON — original body preserved")
+                        orig = chk.get("_original", {})
+                        is_modified = (new_name != orig.get("name") or new_syn != orig.get("syntax"))
+                        if is_modified:
+                            st.markdown("<span style='color:#facc15;font-weight:600;'>✏️ Modified</span>",
+                                        unsafe_allow_html=True)
+                with col_chk:
+                    acc = st.checkbox("✓", value=st.session_state.qc_accepted_defaults.get(idx, True),
+                                      key=f"{_origin}_def_acc_{idx}", label_visibility="collapsed")
+                    st.session_state.qc_accepted_defaults[idx] = acc
+
+        # LLM suggestions
+        if llm_items:
+            st.markdown('<span style="font-size:11px;color:#7c3aed;font-weight:600;'
+                        'text-transform:uppercase;letter-spacing:0.5px;">LLM Suggested</span>',
+                        unsafe_allow_html=True)
+            for idx, chk in llm_items:
+                col_chk, col_acc = st.columns([0.5, 9.5])
+                with col_acc:
+                    with st.expander(f"[LLM] {chk.get('col') or 'table-level'} — {chk.get('name','')[:80]}", expanded=False):
+                        st.markdown('<span style="font-size:10px;font-weight:700;background:#3b0764;'
+                                    'color:#d8b4fe;padding:1px 7px;border-radius:10px;">LLM SUGGESTION</span>',
+                                    unsafe_allow_html=True)
+                        if chk.get("reason"):
+                            st.markdown(f'<div style="font-size:11px;color:#6b7280;font-style:italic;'
+                                        f'margin-top:4px;">💡 {chk["reason"]}</div>', unsafe_allow_html=True)
+                        new_name = st.text_input("Check name", value=chk.get("name",""), key=f"{_origin}_llm_name_{idx}")
+                        st.session_state.qc_llm_suggestions[idx]["name"] = new_name
+                        new_syn = st.text_area("Edit SodaCL condition", value=chk.get("syntax",""),
+                                               key=f"{_origin}_llm_syn_{idx}", height=70)
+                        st.session_state.qc_llm_suggestions[idx]["syntax"] = new_syn
+                        if chk.get("body"):
+                            body_str = st.text_area("body", value=json.dumps(chk["body"], indent=2),
+                                                    height=80, key=f"{_origin}_llm_body_{idx}", label_visibility="collapsed")
+                            try:
+                                st.session_state.qc_llm_suggestions[idx]["body"] = json.loads(body_str)
+                            except Exception:
+                                st.caption("⚠️ Invalid JSON")
+                with col_chk:
+                    acc = st.checkbox("✓", value=st.session_state.qc_accepted_llm.get(idx, False),
+                                      key=f"{_origin}_llm_acc_{idx}", label_visibility="collapsed")
+                    st.session_state.qc_accepted_llm[idx] = acc
+
+        # Manual checks
+        if manual_items:
+            st.markdown('<span style="font-size:11px;color:#10b981;font-weight:600;'
+                        'text-transform:uppercase;letter-spacing:0.5px;">Manual Checks</span>',
+                        unsafe_allow_html=True)
+            for idx, chk in manual_items:
+                col_chk, col_acc = st.columns([0.5, 9.5])
+                with col_acc:
+                    with st.expander(f"[MANUAL] {chk.get('col') or 'table-level'} — {chk['name'][:80]}", expanded=False):
+                        st.markdown("<span style='color:#10b981;font-weight:700;'>🟢 MANUAL</span>",
+                                    unsafe_allow_html=True)
+                        new_name = st.text_input("Check name", value=chk["name"], key=f"{_origin}_man_name_{idx}")
+                        manual_checks[idx]["name"] = new_name
+                        new_syn = st.text_area("Edit SodaCL condition", value=chk["syntax"],
+                                               key=f"{_origin}_man_syn_{idx}", height=70)
+                        manual_checks[idx]["syntax"] = new_syn
+                with col_chk:
+                    acc = st.checkbox("✓", value=acc_manual.get(idx, True),
+                                      key=f"{_origin}_man_acc_{idx}", label_visibility="collapsed")
+                    acc_manual[idx] = acc
+
+        st.markdown("---")
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+acc_def_count = sum(1 for v in st.session_state.qc_accepted_defaults.values() if v)
+acc_llm_count = sum(1 for v in st.session_state.qc_accepted_llm.values() if v)
+acc_man_count = sum(1 for v in acc_manual.values() if v)
+total_acc     = acc_def_count + acc_llm_count + acc_man_count
+
+st.info(f"**{total_acc} checks** selected  ({acc_def_count} default · {acc_llm_count} LLM · {acc_man_count} manual)")
+
+if total_acc > 0:
+    # Excel export
+    from io import BytesIO
+    rows = []
+    for i, chk in enumerate(st.session_state.qc_default_checks):
+        if st.session_state.qc_accepted_defaults.get(i, True):
+            rows.append({"check_name": chk["name"], "syntax": chk["syntax"],
+                         "body": json.dumps(chk.get("body")), "category": chk["category"],
+                         "column": chk.get("col"), "source": "default", "approved": "Yes"})
+    for i, chk in enumerate(st.session_state.qc_llm_suggestions):
+        if st.session_state.qc_accepted_llm.get(i, False):
+            rows.append({"check_name": chk["name"], "syntax": chk["syntax"],
+                         "body": json.dumps(chk.get("body")), "category": chk["category"],
+                         "column": chk.get("col"), "source": "llm", "approved": "Yes"})
+    for i, chk in enumerate(manual_checks):
+        if acc_manual.get(i, True):
+            rows.append({"check_name": chk["name"], "syntax": chk["syntax"],
+                         "body": json.dumps(chk.get("body")), "category": chk["category"],
+                         "column": chk.get("col"), "source": "manual", "approved": "Yes"})
+    xls_buf = BytesIO()
+    pd.DataFrame(rows).to_excel(xls_buf, index=False, engine="openpyxl")
+    st.download_button("📥 Download Checks for Approval (Excel)", data=xls_buf.getvalue(),
+                       file_name=f"{_origin}_qc_checks.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       use_container_width=True)
+
+# ── Manual check form ─────────────────────────────────────────────────────────
+if st.button("➕ Add Manual Check", use_container_width=True):
+    st.session_state.qc_show_manual_form = True
+
+if st.session_state.qc_show_manual_form:
+    table_cols = [c["name"] for c in ctx["columns"]]
+    with st.form(f"{_origin}_manual_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            m_name     = st.text_input("Check Name *")
+            m_category = st.selectbox("Category", CAT_NAMES)
+            m_column   = st.selectbox("Column (optional)", [""] + table_cols)
+        with c2:
+            m_syntax   = st.text_input("SodaCL Syntax *", placeholder="e.g. missing_count(COL) = 0")
+        m_body_str = st.text_area("Body JSON (optional)", value="", height=80, label_visibility="visible")
+        if st.form_submit_button("Add Check", type="primary"):
+            if not m_name.strip() or not m_syntax.strip():
+                st.error("Name and syntax are required.")
+            else:
+                try:
+                    parsed_body = json.loads(m_body_str) if m_body_str.strip() else None
+                except Exception:
+                    parsed_body = None
+                new_chk = {"name": m_name.strip(), "syntax": m_syntax.strip(),
+                           "body": parsed_body, "category": m_category,
+                           "col": m_column.strip() or None}
+                if manual_key not in st.session_state:
+                    st.session_state[manual_key] = []
+                idx = len(st.session_state[manual_key])
+                st.session_state[manual_key].append(new_chk)
+                if acc_man_key not in st.session_state:
+                    st.session_state[acc_man_key] = {}
+                st.session_state[acc_man_key][idx] = True
+                st.session_state.qc_show_manual_form = False
+                st.rerun()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Upload approved Excel (optional override)
+# ─────────────────────────────────────────────────────────────────────────────
+st.divider()
+section_header("📤", "Upload Approved Checks (optional)")
+approved_file = st.file_uploader("Upload reviewed Excel file", type=["xlsx"], key=f"{_origin}_approved_upload")
+approved_from_excel = None
+if approved_file:
+    try:
+        df_app = pd.read_excel(approved_file)
+        req = {"check_name", "syntax", "body", "category", "column", "approved"}
+        if not req.issubset(set(df_app.columns)):
+            st.error("Invalid Excel format.")
+        else:
+            approved_from_excel = df_app[df_app["approved"].str.lower() == "yes"]
+            st.success(f"{len(approved_from_excel)} approved checks loaded from Excel.")
+    except Exception as e:
+        st.error(f"Failed to read Excel: {e}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ④ WORKFLOW METADATA + GENERATE
+# ─────────────────────────────────────────────────────────────────────────────
+st.divider()
+section_header("⚙️", "Workflow Metadata")
+
+with st.form(f"{_origin}_meta_form"):
+    m1, m2 = st.columns(2)
+    with m1:
+        wf_name = st.text_input("Workflow Name *",
+            value=st.session_state.qc_wf_name or f"soda-{ctx['table'].lower()}-qc",
+            placeholder="e.g. soda-customer-qc")
+        wf_desc = st.text_area("Description",
+            value=st.session_state.qc_wf_desc or f"Quality checks for {ctx['table']}",
+            height=80)
+    with m2:
+        wf_depot = st.text_input("Depot Name *", value=st.session_state.qc_wf_depot,
+            placeholder="e.g. sfdataproductsnaaprod")
+        wf_workspace = st.text_input("Workspace *", value=st.session_state.qc_wf_workspace or "public")
+
+    co1, co2 = st.columns(2)
+    with co1:
+        wf_engine  = st.text_input("Engine (optional)", value=st.session_state.qc_wf_engine, placeholder="minerva")
+    with co2:
+        wf_cluster = st.text_input("Cluster (optional)", value=st.session_state.qc_wf_cluster)
+
+    st.markdown("**Tags**")
+    t1, t2, t3 = st.columns(3)
+    with t1:
+        tag_domain  = st.text_input("DPDomain", value=st.session_state.qc_wf_tag_domain, placeholder="Sales")
+        tag_usecase = st.text_input("DPUsecase", value=st.session_state.qc_wf_tag_usecase)
+    with t2:
+        tag_tier = st.selectbox("DPTier", ["Consumer Aligned", "Source Aligned", "Derived"],
+            index=["Consumer Aligned","Source Aligned","Derived"].index(
+                st.session_state.qc_wf_tag_tier if st.session_state.qc_wf_tag_tier in
+                ["Consumer Aligned","Source Aligned","Derived"]
+                else ("Source Aligned" if _is_sadp else "Consumer Aligned")))
+        tag_region  = st.text_input("DPRegion", value=st.session_state.qc_wf_tag_region)
+    with t3:
+        tag_dataos  = st.text_input("Dataos tag", value=st.session_state.qc_wf_tag_dataos)
+        tag_custom  = st.text_input("Custom project tag", value=st.session_state.qc_wf_tag_custom)
+
+    gen_btn = st.form_submit_button("⚡ Generate QC YAML", use_container_width=True, type="primary")
+
+    if gen_btn:
+        if not wf_name.strip():
+            st.error("Workflow name is required.")
+        elif not wf_depot.strip():
+            st.error("Depot name is required.")
+        elif not wf_workspace.strip():
+            st.error("Workspace is required.")
+        else:
+            st.session_state.qc_wf_name      = wf_name.strip()
+            st.session_state.qc_wf_desc      = wf_desc.strip()
+            st.session_state.qc_wf_depot     = wf_depot.strip()
+            st.session_state.qc_wf_workspace = wf_workspace.strip()
+            st.session_state.qc_wf_engine    = wf_engine.strip()
+            st.session_state.qc_wf_cluster   = wf_cluster.strip()
+            st.session_state.qc_wf_tag_domain  = tag_domain.strip()
+            st.session_state.qc_wf_tag_usecase = tag_usecase.strip()
+            st.session_state.qc_wf_tag_tier    = tag_tier
+            st.session_state.qc_wf_tag_region  = tag_region.strip()
+            st.session_state.qc_wf_tag_dataos  = tag_dataos.strip()
+            st.session_state.qc_wf_tag_custom  = tag_custom.strip()
+
+            # Build accepted checks list
+            accepted = []
+            if approved_from_excel is not None:
+                for _, row in approved_from_excel.iterrows():
+                    try:
+                        body = json.loads(row["body"]) if pd.notna(row["body"]) else None
+                    except Exception:
+                        body = None
+                    accepted.append({"name": row["check_name"], "syntax": row["syntax"],
+                                     "body": body, "category": row["category"], "col": row["column"]})
+            else:
+                for i, chk in enumerate(st.session_state.qc_default_checks):
+                    if st.session_state.qc_accepted_defaults.get(i, True):
+                        accepted.append(chk)
+                for i, chk in enumerate(st.session_state.qc_llm_suggestions):
+                    if st.session_state.qc_accepted_llm.get(i, False):
+                        accepted.append(chk)
+                for i, chk in enumerate(manual_checks):
+                    if acc_manual.get(i, True):
+                        accepted.append(chk)
+
+            tags = ["workflow", "soda-checks"]
+            if tag_domain:  tags.append(f"DPDomain.{tag_domain}")
+            if tag_usecase: tags.append(f"DPUsecase.{tag_usecase}")
+            if tag_tier:    tags.append(f"DPTier.{tag_tier}")
+            if tag_region:  tags.append(f"DPRegion.{tag_region}")
+            if tag_dataos:  tags.append(f"Dataos.{tag_dataos}")
+            if tag_custom:  tags.append(tag_custom)
+
+            db  = st.session_state.qc_sf_last_db
+            sch = st.session_state.qc_sf_last_schema
+            udl = f"dataos://{wf_depot.strip()}:{db}.{sch}/{ctx['table']}"
+
+            try:
+                yaml_out = generate_qc_yaml(
+                    metadata={"workflow_name": wf_name.strip(), "description": wf_desc.strip(), "tags": tags},
+                    accepted_checks=accepted,
+                    dataset_udl=udl,
+                    workspace=wf_workspace.strip(),
+                    engine=wf_engine.strip() or None,
+                    cluster=wf_cluster.strip() or None,
+                )
+                st.session_state.qc_last_yaml      = yaml_out
+                st.session_state.qc_last_yaml_name = f"{wf_name.strip()}.yaml"
+                # Save to the correct flow's session key
+                if _is_sadp:
+                    st.session_state.sadp_qc_generated_yaml = yaml_out
+                    st.session_state.sadp_qc_name           = wf_name.strip()
+                else:
+                    st.session_state.cadp_qc_generated_yaml = yaml_out
+                    st.session_state.cadp_qc_name           = wf_name.strip()
+            except Exception as e:
+                st.error(f"YAML generation failed: {e}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⑤ YAML OUTPUT
+# ─────────────────────────────────────────────────────────────────────────────
+if st.session_state.qc_last_yaml:
+    st.divider()
+    section_header("📄", "Generated QC YAML")
+
+    dl_col, back_col = st.columns([2, 2])
+    with dl_col:
         st.download_button(
-            label="⬇ Download Quality Checks YAML",
-            data=yaml_out,
-            file_name=f"{qc_name}.yml",
+            "⬇️ Download YAML",
+            data=st.session_state.qc_last_yaml,
+            file_name=st.session_state.qc_last_yaml_name or "cadp-qc.yaml",
             mime="text/yaml",
             use_container_width=True,
             type="primary",
         )
-    with dl2:
-        if st.button("← Edit / Re-upload Sheet", use_container_width=True):
-            st.session_state.qc_step = 2
-            st.rerun()
-
-    # ── Multi-table tracking + navigation ─────────────────────────────────────
-    # Mark current table as done
-    if "qc_completed_tables" not in st.session_state:
-        st.session_state.qc_completed_tables = set()
-    st.session_state.qc_completed_tables.add(table_name)
-
-    _completed = st.session_state.qc_completed_tables
-    _pending   = [t for t in _valid_tables if t["name"] not in _completed] if _valid_tables else []
-
-    st.divider()
-
-    if _pending:
-        _next = _pending[0]
-        _next_idx = _valid_tables.index(_next)
-        st.info(
-            f"**{len(_pending)} table(s) still need Quality Checks.** "
-            f"Next up: `{_next.get('schema','')}.{_next['name']}` ({len(_next['dims'])} cols)"
-        )
-        nc1, nc2 = st.columns(2)
-        with nc1:
-            if st.button(f"→ Generate QC for: {_next['name']}", use_container_width=True, type="primary"):
-                for k in ["qc_step","qc_default_rows","qc_custom_checks","qc_generated_yaml",
-                          "qc_dataset_ref","qc_name","qc_uploaded_rows","qc_table_name",
-                          "qc_workspace","qc_engine","qc_cluster_name"]:
-                    st.session_state.pop(k, None)
-                st.session_state.qc_step = 1
-                st.session_state.qc_selected_table_idx = _next_idx
-                st.rerun()
-        with nc2:
-            if _origin == "cadp_full" and st.button("Back to CADP Flow →", use_container_width=True):
+    with back_col:
+        if _is_cadp:
+            if st.button("✅ Complete & Back to CADP Flow →", use_container_width=True):
                 if "cadp_completed_steps" not in st.session_state:
                     st.session_state.cadp_completed_steps = set()
-                st.session_state.cadp_completed_steps.add(2)
+                st.session_state.cadp_completed_steps.add(3)
                 st.switch_page("pages/cadp_flow.py")
-    else:
-        total = len(_valid_tables) if _valid_tables else 1
-        st.success(f"🎉 Quality Checks generated for all {total} table(s)!")
-        if _origin == "cadp_full":
-            if st.button("Back to CADP Flow →", use_container_width=True, type="primary"):
-                if "cadp_completed_steps" not in st.session_state:
-                    st.session_state.cadp_completed_steps = set()
-                st.session_state.cadp_completed_steps.add(2)
-                st.switch_page("pages/cadp_flow.py")
+        elif _is_sadp:
+            if st.button("✅ Complete & Back to SADP Flow →", use_container_width=True):
+                if "sadp_completed_steps" not in st.session_state:
+                    st.session_state.sadp_completed_steps = set()
+                st.session_state.sadp_completed_steps.add(2)
+                st.switch_page("pages/sadp_flow.py")
+
+    st.code(st.session_state.qc_last_yaml, language="yaml")
+
+app_footer()

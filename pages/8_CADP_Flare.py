@@ -8,6 +8,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils.generators import generate_flare_yaml
 
 st.set_page_config(page_title="CADP — Flare Jobs", layout="wide")
+from utils.ui_utils import load_global_css
+load_global_css()
 
 st.markdown("""
 <style>

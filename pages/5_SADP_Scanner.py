@@ -6,6 +6,8 @@ from utils.generators import generate_dp_scanner_yaml
 from utils.examples import EXAMPLE_DP_SCANNER, show_example
 
 st.set_page_config(page_title="SADP — Scanner", layout="wide")
+from utils.ui_utils import load_global_css
+load_global_css()
 
 st.markdown("""
 <style>

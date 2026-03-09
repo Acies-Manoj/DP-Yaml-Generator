@@ -1,81 +1,81 @@
 {
-  "table_description": "The buildings table contains information about various buildings, including their location, facility type, and other relevant details. It can be used for analysis and tracking of building-related data.",
+  "table_description": "The buildings table contains information about various buildings, including their location, facility type, and other relevant details. It can be used for analytical purposes such as location analysis and facility management.",
   "columns": [
     {
       "name": "building_eid",
-      "description": "The building_eid column uniquely identifies records and serves as a primary identifier for each building."
+      "description": "The building_eid column contains a unique identifier for each building, which can be used to uniquely identify records."
     },
     {
       "name": "building_number",
-      "description": "The building_number column stores the building number, which can be used to distinguish between multiple buildings in the same area."
+      "description": "The building_number column stores the building number, which can be used to identify a specific building within a larger complex or area."
     },
     {
       "name": "building_name",
-      "description": "The building_name column contains the name of the building, providing a descriptive label for each record."
+      "description": "The building_name column contains the name of the building, which can be used for identification and analytical purposes."
     },
     {
       "name": "building_facility_type",
-      "description": "The building_facility_type column categorizes the building by its facility type, allowing for analysis of different building types."
+      "description": "The building_facility_type column stores the type of facility, such as residential or commercial, which can be used for categorization and analysis."
     },
     {
       "name": "building_ownership_type",
-      "description": "The building_ownership_type column indicates the ownership type of the building, which can be used to analyze ownership patterns."
+      "description": "The building_ownership_type column contains information about the ownership type, which can be used to understand the ownership structure of the building."
     },
     {
       "name": "building_full_address",
-      "description": "The building_full_address column stores the complete address of the building, providing location information."
+      "description": "The building_full_address column stores the full address of the building, which can be used for location analysis and mapping purposes."
     },
     {
       "name": "city",
-      "description": "The city column contains the city where the building is located, allowing for geographic analysis."
+      "description": "The city column contains the city where the building is located, which can be used for geographical analysis and filtering."
     },
     {
       "name": "state",
-      "description": "The state column stores the state where the building is located, providing additional geographic context."
+      "description": "The state column stores the state where the building is located, which can be used for geographical analysis and filtering."
     },
     {
       "name": "zip_code",
-      "description": "The zip_code column uniquely identifies records and serves as a primary key, referencing the postal code of the building's location."
+      "description": "The zip_code column uniquely identifies records and contains the zip code of the building, which can be used for location analysis and filtering."
     },
     {
       "name": "building_latitude",
-      "description": "The building_latitude column stores the latitude coordinate of the building's location, enabling geographic analysis and mapping."
+      "description": "The building_latitude column stores the latitude of the building, which can be used for geographical analysis and mapping purposes."
     },
     {
       "name": "building_longitude",
-      "description": "The building_longitude column contains the longitude coordinate of the building's location, allowing for precise geographic positioning."
+      "description": "The building_longitude column contains the longitude of the building, which can be used for geographical analysis and mapping purposes."
     },
     {
       "name": "active_in",
-      "description": "The active_in column indicates whether the building is currently active, providing a status flag for analysis."
+      "description": "The active_in column indicates whether the building is active, which can be used for filtering and analysis of active buildings."
     },
     {
       "name": "active_units_count",
-      "description": "The active_units_count column stores the number of active units in the building, allowing for analysis of occupancy rates."
+      "description": "The active_units_count column stores the number of active units in the building, which can be used for analysis of building capacity and utilization."
     },
     {
       "name": "unit_count",
-      "description": "The unit_count column contains the total number of units in the building, providing a measure of building size."
+      "description": "The unit_count column contains the total number of units in the building, which can be used for analysis of building capacity and size."
     },
     {
       "name": "is_single_elevator",
-      "description": "The is_single_elevator column indicates whether the building has a single elevator, which can be used to analyze building infrastructure."
+      "description": "The is_single_elevator column indicates whether the building has a single elevator, which can be used for analysis of building amenities and accessibility."
     },
     {
       "name": "geo_type",
-      "description": "The geo_type column stores the geographic type of the building, although its specific meaning is unclear without additional context."
+      "description": "The geo_type column stores the geographical type of the building, which can be used for categorization and analysis of building locations."
     },
     {
       "name": "geo_price",
-      "description": "The geo_price column contains geographic pricing information, although its exact purpose is ambiguous without further context."
+      "description": "The geo_price column contains the geographical price of the building, which can be used for analysis of building values and pricing trends."
     },
     {
       "name": "update_date",
-      "description": "The update_date column stores the date when the building's information was last updated, allowing for tracking of data freshness."
+      "description": "The update_date column stores the date when the building information was last updated, which can be used for tracking changes and data freshness."
     },
     {
       "name": "building_row_number",
-      "description": "The building_row_number column stores a row number for the building, which can be used for internal data processing or sorting purposes."
+      "description": "The building_row_number column contains a row number for the building, which can be used for sorting and indexing purposes."
     }
   ]
 }
