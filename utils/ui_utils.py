@@ -4,52 +4,20 @@ Loads the global CSS design system and provides reusable HTML components.
 """
 
 import os
-from datetime import datetime
 import streamlit as st
 
 
-# ── Download History Tracker ───────────────────────────────────────────────────
-
-def track_download(filename: str, data: str, mime: str = "text/plain"):
-    """
-    Call this instead of st.download_button wherever files are downloaded.
-    Logs the file to session-level download history AND renders the button.
-    Returns the download button widget.
-    """
-    if "download_history" not in st.session_state:
-        st.session_state.download_history = []
-
-    # Check if already tracked this session (avoid duplicates on re-render)
-    existing = [f["filename"] for f in st.session_state.download_history]
-    if filename not in existing:
-        st.session_state.download_history.insert(0, {
-            "filename": filename,
-            "data":     data,
-            "mime":     mime,
-            "time":     datetime.now().strftime("%H:%M"),
-        })
-        # Cap history at 10 items
-        st.session_state.download_history = st.session_state.download_history[:10]
-
-    return st.download_button(
-        label=f"⬇ Download {filename}",
-        data=data,
-        file_name=filename,
-        mime=mime,
-        use_container_width=True,
-    )
-
-
-def _file_icon(filename: str) -> str:
-    """Return an emoji icon based on file extension."""
-    if filename.endswith(".sql"):   return "🗄️"
-    if filename.endswith(".yaml") or filename.endswith(".yml"): return "📄"
-    if filename.endswith(".zip"):   return "🗜️"
-    return "📁"
+def _clear_nav_state():
+    """Clear all flow-specific session state keys before navigating."""
+    for _k in ["sm_mode", "sm_origin", "semantic_section",
+                "dp_origin", "dp_step", "dp_entry_step",
+                "depot_origin", "depot_specific_file", "flare_origin",
+                "cadp_qc_origin", "sadp_qc_origin"]:
+        st.session_state.pop(_k, None)
 
 
 def render_sidebar():
-    """Render the branded sidebar — logo, download history, home button."""
+    """Render the branded sidebar — logo, back to home, quick jump links."""
     with st.sidebar:
 
         # ── Logo / app name ────────────────────────────────────────────────
@@ -63,64 +31,47 @@ def render_sidebar():
 
         st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
 
-        # ── Home button ────────────────────────────────────────────────────
+        # ── Back to Home ───────────────────────────────────────────────────
         if st.button("⬅ Back to Home", key="_sb_home", use_container_width=True):
-            for _k in ["sm_mode", "sm_origin", "semantic_section",
-                        "dp_origin", "dp_step", "dp_entry_step",
-                        "depot_origin", "depot_specific_file", "flare_origin",
-                        "cadp_qc_origin", "sadp_qc_origin"]:
-                st.session_state.pop(_k, None)
+            _clear_nav_state()
             st.session_state["home_screen"] = "home"
             st.switch_page("app.py")
 
         st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
 
-        # ── Download History ───────────────────────────────────────────────
-        history = st.session_state.get("download_history", [])
-
+        # ── Quick Jump ─────────────────────────────────────────────────────
         st.markdown(
-            '<div class="sb-context-label" style="padding: 0 18px; margin-bottom: 8px;">'
-            'GENERATED FILES</div>',
+            '<div class="sb-context-label" style="padding: 0 18px 8px 18px;">QUICK JUMP</div>',
             unsafe_allow_html=True,
         )
 
-        if not history:
+        # Each entry: (label, emoji, page, session_state_overrides)
+        quick_links = [
+            ("SQL File",        "🗄️", "pages/1_CADP.py",                 {"sm_origin": "specific", "sm_mode": "individual", "semantic_section": "sql"}),
+            ("Table YAML",      "📄", "pages/1_CADP.py",                 {"sm_origin": "specific", "sm_mode": "individual", "semantic_section": "table"}),
+            ("View YAML",       "📄", "pages/1_CADP.py",                 {"sm_origin": "specific", "sm_mode": "individual", "semantic_section": "view"}),
+            ("Lens Deployment", "🔭", "pages/1_CADP.py",                 {"sm_origin": "specific", "sm_mode": "individual", "semantic_section": "lens"}),
+            ("Flare Job",       "⚡", "pages/8_CADP_Flare.py",           {"flare_origin": "specific"}),
+            ("Depot",           "🏗️", "pages/6_Depot.py",               {"depot_origin": "specific", "depot_specific_file": "depot"}),
+            ("Bundle",          "📦", "pages/9_CADP_DP_Deployment.py",   {"dp_origin": "specific", "dp_step": 1, "dp_entry_step": 1}),
+            ("DP Scanner",      "🔍", "pages/9_CADP_DP_Deployment.py",   {"dp_origin": "specific", "dp_step": 3, "dp_entry_step": 3}),
+            ("Quality Checks",  "✅", "pages/1_CADP.py",                 {"sm_origin": "specific", "sm_mode": "individual", "semantic_section": "qc"}),
+        ]
+
+        for label, icon, page, state_overrides in quick_links:
             st.markdown(
-                '<div style="padding: 0 18px;">'
-                '<p style="font-size:12px; color:#4b5563; line-height:1.6; margin:0;">'
-                'No files generated yet.<br>Files you download will appear here for quick re-access.'
-                '</p></div>',
+                f'<div class="sb-quick-item">'
+                f'<span class="sb-quick-icon">{icon}</span>'
+                f'<span class="sb-quick-label">{label}</span>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
-        else:
-            for item in history:
-                icon = _file_icon(item["filename"])
-                # Card per file
-                st.markdown(
-                    f'<div class="sb-file-item">'
-                    f'<span class="sb-file-icon">{icon}</span>'
-                    f'<div class="sb-file-info">'
-                    f'<span class="sb-file-name">{item["filename"]}</span>'
-                    f'<span class="sb-file-time">{item["time"]}</span>'
-                    f'</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-                st.download_button(
-                    label="Re-download",
-                    data=item["data"],
-                    file_name=item["filename"],
-                    mime=item["mime"],
-                    use_container_width=True,
-                    key=f"_sb_dl_{item['filename']}_{item['time']}",
-                )
-
-            # Clear history button
-            st.markdown('<div style="padding: 0 4px; margin-top: 4px;">', unsafe_allow_html=True)
-            if st.button("🗑 Clear History", key="_sb_clear_history", use_container_width=True):
-                st.session_state.download_history = []
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            if st.button(label, key=f"_sb_qj_{label}", use_container_width=True):
+                _clear_nav_state()
+                for k, v in state_overrides.items():
+                    st.session_state[k] = v
+                st.session_state["home_screen"] = "specific"
+                st.switch_page(page)
 
         # ── Footer ─────────────────────────────────────────────────────────
         st.markdown(
