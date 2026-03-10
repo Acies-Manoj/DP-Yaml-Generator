@@ -216,6 +216,11 @@ if mandatory_done:
         if sec_name and sec.get("cred_yaml"):
             files[f"secrets/{sec_name}.yml"] = sec["cred_yaml"]
 
+    # ── secrets/ — repo credential (git sync secret for Lens) ────────────────
+    if st.session_state.get("ind_rc_yaml") and st.session_state.get("ind_rc_name"):
+        rc_name = st.session_state.ind_rc_name.strip()
+        files[f"secrets/{rc_name}.yml"] = st.session_state.ind_rc_yaml
+
     # ── Quality Checks (optional) ─────────────────────────────────────────────
     if 3 in completed and st.session_state.get("cadp_qc_generated_yaml"):
         qc_name = st.session_state.get("cadp_qc_name", "quality-checks")
