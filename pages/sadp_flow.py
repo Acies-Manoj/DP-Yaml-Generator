@@ -10,7 +10,7 @@ load_global_css()
 # STATE INIT
 # ─────────────────────────────────────────────────────────────────────────────
 STEPS = {
-    1: {"label": "Depot",          "optional": True},
+    1: {"label": "Depot",          "optional": False},
     2: {"label": "Quality Checks", "optional": True},
     3: {"label": "Bundle",         "optional": False},
     4: {"label": "Spec",           "optional": False},
