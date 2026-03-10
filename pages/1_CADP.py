@@ -1,7 +1,11 @@
 import sys, os
 import streamlit as st
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from utils.ui_utils import load_global_css
 
 st.set_page_config(layout="wide")
+load_global_css()
+
 
 # ---------- Custom CSS ----------
 st.markdown("""
@@ -154,12 +158,18 @@ if st.session_state.get("sm_mode") == "individual":
 # ══════════════════════════════════════════════════════════════════════════════
 # INDIVIDUAL SECTION BUILDERS
 # ══════════════════════════════════════════════════════════════════════════════
-from sm.individual.ind_sql   import render_ind_sql
-from sm.individual.ind_table import render_ind_table
-from sm.individual.ind_view  import render_ind_view
-from sm.individual.ind_lens  import render_ind_lens
+from sm.individual.ind_sql        import render_ind_sql
+from sm.individual.ind_table      import render_ind_table
+from sm.individual.ind_view       import render_ind_view
+from sm.individual.ind_lens       import render_ind_lens
+from sm.individual.ind_qc         import render_ind_qc
+from sm.individual.ind_user_groups import render_ind_user_groups
+from sm.individual.ind_repo_cred  import render_ind_repo_cred
 
-if   section == "sql":   render_ind_sql()
-elif section == "table": render_ind_table()
-elif section == "view":  render_ind_view()
-elif section == "lens":  render_ind_lens()
+if   section == "sql":         render_ind_sql()
+elif section == "table":       render_ind_table()
+elif section == "view":        render_ind_view()
+elif section == "lens":        render_ind_lens()
+elif section == "qc":          render_ind_qc()
+elif section == "user_groups": render_ind_user_groups()
+elif section == "repo_cred":   render_ind_repo_cred()

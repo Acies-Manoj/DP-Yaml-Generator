@@ -32,6 +32,7 @@ DP_KEYS_TO_CLEAR = [
 
 for k, v in [
     ("dp_step",                  1),
+    ("dp_entry_step",            1),   # remembers which step the user opened from catalog
     ("dp_preview_mode",          False),
     ("dp_bundle_tags",           ["dataproduct"]),
     ("dp_spec_tags",             [""]),
@@ -74,8 +75,12 @@ with nav_l:
     else:
         if not st.session_state.dp_preview_mode:
             if st.button("← Back"):
-                st.session_state.dp_step -= 1
-                st.rerun()
+                # If we're at the step the user originally entered from, go back to catalog
+                if _dp_origin == "specific" and step == st.session_state.dp_entry_step:
+                    _dp_back()
+                else:
+                    st.session_state.dp_step -= 1
+                    st.rerun()
 with nav_r:
     if st.button("✖ Cancel / Start Over"):
         for k in DP_KEYS_TO_CLEAR:
@@ -194,10 +199,21 @@ if step == 1:
                 st.session_state.dp_preview_mode = False
                 st.rerun()
         with pc2:
-            if st.button("Next: Spec →", use_container_width=True, type="primary"):
-                st.session_state.dp_preview_mode = False
-                st.session_state.dp_step = 2
-                st.rerun()
+            if _dp_origin == "specific":
+                bundle_fname = f"{st.session_state.get('dp_bundle_name', 'bundle')}.yml"
+                st.download_button(
+                    f"⬇ Download {bundle_fname}",
+                    data=st.session_state.dp_generated_bundle,
+                    file_name=bundle_fname,
+                    mime="text/yaml",
+                    use_container_width=True,
+                    type="primary",
+                )
+            else:
+                if st.button("Next: Spec →", use_container_width=True, type="primary"):
+                    st.session_state.dp_preview_mode = False
+                    st.session_state.dp_step = 2
+                    st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -437,10 +453,21 @@ elif step == 2:
                 st.session_state.dp_preview_mode = False
                 st.rerun()
         with pc2:
-            if st.button("Next: Scanner →", use_container_width=True, type="primary"):
-                st.session_state.dp_preview_mode = False
-                st.session_state.dp_step = 3
-                st.rerun()
+            if _dp_origin == "specific":
+                spec_fname = f"{st.session_state.get('dp_spec_name', 'spec')}.yml"
+                st.download_button(
+                    f"⬇ Download {spec_fname}",
+                    data=st.session_state.dp_generated_spec,
+                    file_name=spec_fname,
+                    mime="text/yaml",
+                    use_container_width=True,
+                    type="primary",
+                )
+            else:
+                if st.button("Next: Scanner →", use_container_width=True, type="primary"):
+                    st.session_state.dp_preview_mode = False
+                    st.session_state.dp_step = 3
+                    st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -590,10 +617,22 @@ elif step == 3:
                 st.session_state.dp_preview_mode = False
                 st.rerun()
         with pc2:
-            if st.button("Review All Files ✅", use_container_width=True, type="primary"):
-                st.session_state.dp_preview_mode = False
-                st.session_state.dp_step = 4
-                st.rerun()
+            if _dp_origin == "specific":
+                spec_name_for_file = st.session_state.get("dp_spec_name", "scanner")
+                sc_fname = f"scan-{spec_name_for_file}.yml"
+                st.download_button(
+                    f"⬇ Download {sc_fname}",
+                    data=st.session_state.dp_generated_scanner,
+                    file_name=sc_fname,
+                    mime="text/yaml",
+                    use_container_width=True,
+                    type="primary",
+                )
+            else:
+                if st.button("Review All Files ✅", use_container_width=True, type="primary"):
+                    st.session_state.dp_preview_mode = False
+                    st.session_state.dp_step = 4
+                    st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
