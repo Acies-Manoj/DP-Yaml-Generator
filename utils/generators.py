@@ -12,7 +12,6 @@ def generate_table_yaml(table: dict) -> str:
     lines.append(f"    sql: {{{{ load_sql('{table['name']}') }}}}")
     if table.get("description", "").strip():
         lines.append(f'    description: "{table["description"].strip()}"')
-    # Only write public: false explicitly — DataOS defaults to true when omitted
     if not table.get("public", True):
         lines.append("    public: false")
 
@@ -40,7 +39,6 @@ def generate_table_yaml(table: dict) -> str:
                     lines.append(f'        description: "{d["description"].strip()}"')
                 if d.get("primary_key"):
                     lines.append("        primary_key: true")
-                # Only write public: false explicitly — DataOS defaults to true when omitted
                 if not d.get("public", True):
                     lines.append("        public: false")
                 lines.append("")
@@ -268,6 +266,7 @@ def generate_repo_cred_yaml(d: dict) -> str:
     lines.append(f"    GITSYNC_PASSWORD: \"{d.get('git_password', '')}\"")
     return "\n".join(lines)
 
+
 def generate_flare_yaml(d: dict) -> str:
     """Generate a Flare Workflow YAML string from a flare job config dict."""
     lines = []
@@ -285,8 +284,6 @@ def generate_flare_yaml(d: dict) -> str:
         lines.append(f"description: {d['description'].strip()}")
 
     lines.append("workflow:")
-
-    # Schedule — always rendered as comments
     lines.append("  # schedule:")
     if d.get("cron", "").strip():
         lines.append(f"  #   cron: '{d['cron'].strip()}'")
@@ -295,7 +292,6 @@ def generate_flare_yaml(d: dict) -> str:
     lines.append("  #   # endOn: '2023-12-12T22:00:00Z'")
     lines.append("  #   concurrencyPolicy: Forbid")
 
-    # DAG name: auto-derive from workflow name (wf- -> dg-), or use explicit dag_name
     dag_name = d.get("dag_name", "").strip()
     if not dag_name:
         wf = d["name"]
@@ -332,7 +328,6 @@ def generate_flare_yaml(d: dict) -> str:
     lines.append(f"            explain: {'true' if d.get('explain', True) else 'false'}")
     lines.append(f"            logLevel: {d.get('log_level', 'INFO')}")
 
-    # Inputs
     inputs = [i for i in d.get("inputs", []) if i.get("name", "").strip()]
     if inputs:
         lines.append("            inputs:")
@@ -344,7 +339,6 @@ def generate_flare_yaml(d: dict) -> str:
                 lines.append("                options:")
                 lines.append("                  inferSchema: true")
 
-    # Steps
     steps = [s for s in d.get("steps", []) if s.get("name", "").strip()]
     if steps:
         lines.append("            steps:")
@@ -357,7 +351,6 @@ def generate_flare_yaml(d: dict) -> str:
                 for sql_line in sql.splitlines():
                     lines.append(f"                      {sql_line}")
 
-    # Outputs
     outputs = [o for o in d.get("outputs", []) if o.get("name", "").strip()]
     if outputs:
         lines.append("            outputs:")
@@ -381,6 +374,7 @@ def generate_flare_yaml(d: dict) -> str:
 
 def generate_bundle_yaml(d: dict) -> str:
     """Generate Bundle YAML for a CADP data product."""
+    import os as _os
     lines = []
     lines.append(f"name: {d['name']}")
     lines.append("version: v1beta")
@@ -398,9 +392,22 @@ def generate_bundle_yaml(d: dict) -> str:
     lines.append(f"layer: \"{d.get('layer', 'user')}\"")
     lines.append("bundle:")
     lines.append("  resources:")
+
+    # ── Lens resource (always active, always first) ───────────────────────────
     lines.append("    - id: lens")
     lines.append(f"      file: {d.get('lens_file', 'build/semantic-model/deployment.yml').strip()}")
     lines.append(f"      workspace: {d.get('lens_workspace', 'public').strip()}")
+
+    # ── Quality Checks resources (active, one entry per item in qc_resources) ─
+    qc_resources = [q for q in d.get("qc_resources", []) if q.get("file", "").strip()]
+    for qc in qc_resources:
+        qc_id = _os.path.basename(qc["file"]).replace(".yml", "").replace(".yaml", "")
+        lines.append("")
+        lines.append(f"    - id: {qc_id}")
+        lines.append(f"      file: {qc['file'].strip()}")
+        lines.append(f"      workspace: {qc.get('workspace', 'public').strip()}")
+
+    # ── Commented optional blocks ─────────────────────────────────────────────
     lines.append("")
     lines.append("    # - id: api")
     lines.append("    #   file: activation/data-apis/service.yml")
@@ -413,27 +420,6 @@ def generate_bundle_yaml(d: dict) -> str:
     lines.append("    #   workspace: public")
     lines.append("    #   dependencies:")
     lines.append("    #     - api")
-
-    # Optional commented quality blocks derived from input/output dataset refs
-    for inp in d.get("inputs", []):
-        ref = inp.get("ref", "").strip()
-        if not ref:
-            continue
-        short = ref.split(":")[-1]
-        lines.append("")
-        lines.append(f"    # - id: quality_{short}")
-        lines.append(f"    #   file: build/slo/input/{short}.yml")
-        lines.append("    #   workspace: public")
-
-    for out in d.get("outputs", []):
-        ref = out.get("ref", "").strip()
-        if not ref:
-            continue
-        short = ref.split(":")[-1]
-        lines.append("")
-        lines.append(f"    # - id: quality_{short}")
-        lines.append(f"    #   file: build/slo/output/{short}.yml")
-        lines.append("    #   workspace: public")
 
     return "\n".join(lines)
 
@@ -479,7 +465,6 @@ def generate_spec_yaml(d: dict) -> str:
             lines.append(f"      - name: {c['name'].strip()}")
             lines.append(f"        description: {c.get('description', 'consumer').strip()}")
 
-    # resource → references the bundle by name
     lines.append("    resource:")
     lines.append("      refType: dataos")
     lines.append(f"      ref: bundle:v1beta:{d['bundle_name']}")
@@ -559,14 +544,9 @@ def generate_dp_scanner_yaml(d: dict) -> str:
     return "\n".join(lines)
 
 
-
-
-
-
-
-
 def generate_sadp_bundle_yaml(d: dict) -> str:
-    """Generate Bundle YAML for a SADP data product (no lens, quality checks as active resource)."""
+    """Generate Bundle YAML for a SADP data product (no lens, quality checks as active resources)."""
+    import os as _os
     lines = []
     lines.append(f"name: {d['name']}")
     lines.append("version: v1beta")
@@ -585,18 +565,23 @@ def generate_sadp_bundle_yaml(d: dict) -> str:
     lines.append("bundle:")
     lines.append("  resources:")
 
-    # Quality checks resource — active
-    qc_file = d.get("qc_file", "").strip()
-    if qc_file:
-        lines.append("    - id: quality-checks")
-        lines.append(f"      file: {qc_file}")
-        lines.append(f"      workspace: {d.get('qc_workspace', 'public').strip()}")
+    # ── Quality Checks resources (one active entry per item) ──────────────────
+    qc_resources = [q for q in d.get("qc_resources", []) if q.get("file", "").strip()]
+    if qc_resources:
+        for qc in qc_resources:
+            qc_id = _os.path.basename(qc["file"]).replace(".yml", "").replace(".yaml", "")
+            lines.append(f"    - id: {qc_id}")
+            lines.append(f"      file: {qc['file'].strip()}")
+            lines.append(f"      workspace: {qc.get('workspace', 'public').strip()}")
+            lines.append("")
     else:
+        # No QC resources provided — render as commented placeholder
         lines.append("    # - id: quality-checks")
         lines.append("    #   file: build/quality-checks/checks.yml")
         lines.append("    #   workspace: public")
+        lines.append("")
 
-    lines.append("")
+    # ── Commented optional blocks ─────────────────────────────────────────────
     lines.append("    # - id: api")
     lines.append("    #   file: activation/data-apis/service.yml")
     lines.append("    #   workspace: public")
@@ -608,27 +593,6 @@ def generate_sadp_bundle_yaml(d: dict) -> str:
     lines.append("    #   workspace: public")
     lines.append("    #   dependencies:")
     lines.append("    #     - api")
-
-    # Commented quality blocks for inputs/outputs
-    for inp in d.get("inputs", []):
-        ref = inp.get("ref", "").strip()
-        if not ref:
-            continue
-        short = ref.split(":")[-1]
-        lines.append("")
-        lines.append(f"    # - id: quality_{short}")
-        lines.append(f"    #   file: build/slo/input/{short}.yml")
-        lines.append("    #   workspace: public")
-
-    for out in d.get("outputs", []):
-        ref = out.get("ref", "").strip()
-        if not ref:
-            continue
-        short = ref.split(":")[-1]
-        lines.append("")
-        lines.append(f"    # - id: quality_{short}")
-        lines.append(f"    #   file: build/slo/output/{short}.yml")
-        lines.append("    #   workspace: public")
 
     return "\n".join(lines)
 
@@ -674,7 +638,6 @@ def generate_sadp_spec_yaml(d: dict) -> str:
             lines.append(f"      - name: {c['name'].strip()}")
             lines.append(f"        description: {c.get('description', 'consumer').strip()}")
 
-    # resource → references the bundle by name
     lines.append("    resource:")
     lines.append("      refType: dataos")
     lines.append(f"      ref: bundle:v1beta:{d['bundle_name']}")
@@ -693,7 +656,6 @@ def generate_sadp_spec_yaml(d: dict) -> str:
             lines.append("      - refType: dataos")
             lines.append(f"        ref: {out['ref'].strip()}")
 
-    # No lens port for SADP — talos comment only
     lines.append("    ports:")
     lines.append("      # talos:")
     lines.append("      #   - ref: service:v1:<api-name>:public")

@@ -1,0 +1,49 @@
+{
+  "table_description": "The accounts table stores information about customer accounts, including account details and contact information. It uniquely identifies records using a combination of account_id, customer_id, and sscrm_customer_id.",
+  "columns": [
+    {
+      "name": "account_id",
+      "description": "Uniquely identifies records in the table along with customer_id and sscrm_customer_id, likely used to distinguish between different accounts."
+    },
+    {
+      "name": "account_name",
+      "description": "Stores the name of the account, which can be used for identification and analysis purposes."
+    },
+    {
+      "name": "account_number",
+      "description": "Holds the account number, which may be used for reference and tracking purposes."
+    },
+    {
+      "name": "customer_id",
+      "description": "Uniquely identifies records in the table along with account_id and sscrm_customer_id, likely referencing a customer entity."
+    },
+    {
+      "name": "customer_number",
+      "description": "Stores a customer number, which could be used to reference or track customer information."
+    },
+    {
+      "name": "sscrm_customer_id",
+      "description": "Uniquely identifies records in the table along with account_id and customer_id, possibly referencing a customer in an external system."
+    },
+    {
+      "name": "branch",
+      "description": "Holds the branch information associated with the account, which can be used for geographical analysis and filtering."
+    },
+    {
+      "name": "portfolio_owner",
+      "description": "Stores the name or identifier of the portfolio owner, which can be used to track ownership and responsibility."
+    },
+    {
+      "name": "primary_contact_name",
+      "description": "Stores the name of the primary contact for the account, which can be used for communication and relationship management purposes."
+    },
+    {
+      "name": "primary_contact_email1",
+      "description": "Holds the email address of the primary contact, which can be used for communication and outreach efforts."
+    },
+    {
+      "name": "primary_contact_phone1",
+      "description": "Stores the phone number of the primary contact, which can be used for direct communication and follow-up activities."
+    }
+  ]
+}

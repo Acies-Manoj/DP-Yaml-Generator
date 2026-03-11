@@ -19,8 +19,11 @@ STEPS = {
 
 if "sadp_completed_steps" not in st.session_state:
     st.session_state.sadp_completed_steps = set()
+if "sadp_skipped_steps" not in st.session_state:
+    st.session_state.sadp_skipped_steps = set()
 
 completed = st.session_state.sadp_completed_steps
+skipped   = st.session_state.sadp_skipped_steps
 
 # ─────────────────────────────────────────────────────────────────────────────
 # NAVIGATION HELPER
@@ -61,13 +64,13 @@ with nav_l:
         st.switch_page("app.py")
 with nav_r:
     if st.button("Start Over"):
-        for k in ["sadp_completed_steps", "sadp_depot_name"]:
+        for k in ["sadp_completed_steps", "sadp_skipped_steps", "sadp_depot_name"]:
             st.session_state.pop(k, None)
         st.rerun()
 
 st.divider()
 
-done_count = len(completed)
+done_count = len(completed) + len(skipped)
 st.progress(done_count / 5, text=f"{done_count} of 5 steps done")
 st.markdown(" ")
 
@@ -76,17 +79,20 @@ st.markdown(" ")
 # ─────────────────────────────────────────────────────────────────────────────
 for n, info in STEPS.items():
     is_done     = n in completed
+    is_skipped  = n in skipped
     is_optional = info["optional"]
     unlocked    = is_unlocked(n)
 
     if is_done:
         card_cls, badge_cls, badge_txt = "complete", "b-complete", "Complete"
+    elif is_skipped:
+        card_cls, badge_cls, badge_txt = "skipped",  "b-skipped",  "Skipped"
     elif not unlocked:
         card_cls, badge_cls, badge_txt = "locked",   "b-locked",   "Locked"
     elif is_optional:
         card_cls, badge_cls, badge_txt = "pending",  "b-pending",  "Optional"
-    elif n == min((s for s in STEPS if s not in completed), default=n):
-        card_cls, badge_cls, badge_txt = "current",  "b-current",  "Current"
+    elif n == min((s for s in STEPS if s not in completed and s not in skipped), default=n):
+        card_cls, badge_cls, badge_txt = "current",  "b-current",  "Pending"
     else:
         card_cls, badge_cls, badge_txt = "pending",  "b-pending",  "Pending"
 
@@ -116,6 +122,10 @@ for n, info in STEPS.items():
         if is_done:
             if st.button("Edit", key=f"sadp_edit_{n}", use_container_width=True):
                 go_to_step(n)
+        elif is_skipped:
+            if st.button("↩ Do it", key=f"sadp_doit_{n}", use_container_width=True):
+                st.session_state.sadp_skipped_steps.discard(n)
+                st.rerun()
         elif unlocked:
             if is_optional:
                 btn_l, btn_r = st.columns(2)
@@ -126,7 +136,7 @@ for n, info in STEPS.items():
                 with btn_r:
                     if st.button("Skip", key=f"sadp_skip_{n}",
                                  use_container_width=True):
-                        st.session_state.sadp_completed_steps.add(n)
+                        st.session_state.sadp_skipped_steps.add(n)
                         st.rerun()
             else:
                 if st.button("Start", key=f"sadp_start_{n}",
@@ -167,8 +177,8 @@ if mandatory_done:
     if st.session_state.get("depot_yaml_scanner"):
         files[f"depot/snowflake/{depot_name}-scanner.yml"] = st.session_state.depot_yaml_scanner
 
-    # ── quality-checks/ ───────────────────────────────────────────────────────
-    if st.session_state.get("sadp_qc_generated_yaml"):
+    # ── quality-checks/ — only if NOT skipped ────────────────────────────────
+    if 2 not in skipped and st.session_state.get("sadp_qc_generated_yaml"):
         qc_name = st.session_state.get("sadp_qc_name", "quality-checks")
         files[f"quality-checks/{qc_name}.yml"] = st.session_state.sadp_qc_generated_yaml
 
@@ -186,20 +196,49 @@ if mandatory_done:
             st.markdown(f"- `{path}`")
         st.markdown(" ")
 
-        zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, "w") as zf:
-            for path, content in files.items():
-                zf.writestr(path, content)
-        zip_buf.seek(0)
+        # ── Product name input ────────────────────────────────────────────────
+        st.markdown("#### 📦 Name Your Data Product")
+        st.caption("This will be used as the root folder name inside the ZIP.")
+        dp_col1, dp_col2 = st.columns([3, 1])
+        with dp_col1:
+            sadp_dp_name = st.text_input(
+                "Data Product Name",
+                value=st.session_state.get("sadp_dp_name", spec_name or "my-data-product"),
+                placeholder="e.g. sales-source-product",
+                key="sadp_dp_name_input",
+                label_visibility="collapsed",
+            )
+        with dp_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            name_confirmed = st.button("✅ Confirm", key="sadp_confirm_dp_name", use_container_width=True)
 
-        st.download_button(
-            label=f"⬇ Download Full SADP — {spec_name}.zip",
-            data=zip_buf,
-            file_name=f"{spec_name}-sadp-full.zip",
-            mime="application/zip",
-            use_container_width=True,
-            type="primary",
-        )
+        if name_confirmed and sadp_dp_name.strip():
+            st.session_state["sadp_dp_name"] = sadp_dp_name.strip()
+            st.rerun()
+
+        confirmed_name = st.session_state.get("sadp_dp_name", "").strip()
+
+        if confirmed_name:
+            st.success(f"📁 Root folder: `{confirmed_name}/`")
+            # Prefix all paths with the product name
+            prefixed_files = {f"{confirmed_name}/{path}": content for path, content in files.items()}
+
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "w") as zf:
+                for path, content in prefixed_files.items():
+                    zf.writestr(path, content)
+            zip_buf.seek(0)
+
+            st.download_button(
+                label=f"⬇ Download Full SADP — {confirmed_name}.zip",
+                data=zip_buf,
+                file_name=f"{confirmed_name}.zip",
+                mime="application/zip",
+                use_container_width=True,
+                type="primary",
+            )
+        else:
+            st.info("Enter and confirm a Data Product name above to enable download.")
     else:
         st.info("Complete the steps above to generate files for download.")
 

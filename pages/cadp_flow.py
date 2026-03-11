@@ -237,20 +237,48 @@ if mandatory_done:
             st.markdown(f"- `{path}`")
         st.markdown(" ")
 
-        zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, "w") as zf:
-            for path, content in files.items():
-                zf.writestr(path, content)
-        zip_buf.seek(0)
+        # ── Product name input ────────────────────────────────────────────────
+        st.markdown("#### 📦 Name Your Data Product")
+        st.caption("This will be used as the root folder name inside the ZIP.")
+        dp_col1, dp_col2 = st.columns([3, 1])
+        with dp_col1:
+            cadp_dp_name = st.text_input(
+                "Data Product Name",
+                value=st.session_state.get("cadp_dp_name", spec_name or "my-data-product"),
+                placeholder="e.g. sales-consumer-product",
+                key="cadp_dp_name_input",
+                label_visibility="collapsed",
+            )
+        with dp_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            name_confirmed = st.button("✅ Confirm", key="cadp_confirm_dp_name", use_container_width=True)
 
-        product_name = spec_name or depot_name or "cadp"
-        st.download_button(
-            label=f"⬇ Download Full CADP — {product_name}.zip",
-            data=zip_buf,
-            file_name=f"{product_name}-cadp-full.zip",
-            mime="application/zip",
-            use_container_width=True,
-            type="primary",
-        )
+        if name_confirmed and cadp_dp_name.strip():
+            st.session_state["cadp_dp_name"] = cadp_dp_name.strip()
+            st.rerun()
+
+        confirmed_name = st.session_state.get("cadp_dp_name", "").strip()
+
+        if confirmed_name:
+            st.success(f"📁 Root folder: `{confirmed_name}/`")
+            # Prefix all paths with the product name
+            prefixed_files = {f"{confirmed_name}/{path}": content for path, content in files.items()}
+
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "w") as zf:
+                for path, content in prefixed_files.items():
+                    zf.writestr(path, content)
+            zip_buf.seek(0)
+
+            st.download_button(
+                label=f"⬇ Download Full CADP — {confirmed_name}.zip",
+                data=zip_buf,
+                file_name=f"{confirmed_name}.zip",
+                mime="application/zip",
+                use_container_width=True,
+                type="primary",
+            )
+        else:
+            st.info("Enter and confirm a Data Product name above to enable download.")
     else:
         st.info("Complete the steps above to generate files for download.")
