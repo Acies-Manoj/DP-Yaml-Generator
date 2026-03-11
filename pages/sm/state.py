@@ -22,7 +22,13 @@ BUNDLE_KEYS_TO_CLEAR = [
     "bundle_lens_name", "bundle_generated_lens_yaml", "bundle_lens_preview_mode",
     "bundle_user_groups", "bundle_user_groups_yaml", "bundle_user_groups_preview",
     "bundle_repo_cred_name", "bundle_repo_cred_desc", "bundle_repo_cred_owner",
+    "bundle_repo_cred_username", "bundle_repo_cred_password",
+    "bundle_repo_cred_version", "bundle_repo_cred_layer", "bundle_repo_cred_acl",
+    "bundle_repo_cred_secret_type",
     "bundle_repo_cred_tags", "bundle_repo_cred_yaml", "bundle_repo_cred_preview",
+    "bundle_lens_src_name", "bundle_lens_src_catalog", "bundle_lens_src_type",
+    "bundle_lens_repo_url", "bundle_lens_repo_basedir",
+    "bundle_lens_version", "bundle_lens_layer", "bundle_lens_compute",
 ]
 
 BUNDLE_YAML_KEYS_PRESERVE = {
@@ -81,9 +87,15 @@ def init_bundle_state():
         ]
     if "bundle_user_groups_yaml"    not in st.session_state: st.session_state.bundle_user_groups_yaml    = ""
     if "bundle_user_groups_preview" not in st.session_state: st.session_state.bundle_user_groups_preview = False
-    if "bundle_repo_cred_name"  not in st.session_state: st.session_state.bundle_repo_cred_name  = ""
-    if "bundle_repo_cred_desc"  not in st.session_state: st.session_state.bundle_repo_cred_desc  = "Git read secrets for repos."
-    if "bundle_repo_cred_owner" not in st.session_state: st.session_state.bundle_repo_cred_owner = ""
+    if "bundle_repo_cred_name"        not in st.session_state: st.session_state.bundle_repo_cred_name        = ""
+    if "bundle_repo_cred_desc"        not in st.session_state: st.session_state.bundle_repo_cred_desc        = "Git read secrets for repos."
+    if "bundle_repo_cred_owner"       not in st.session_state: st.session_state.bundle_repo_cred_owner       = ""
+    if "bundle_repo_cred_username"    not in st.session_state: st.session_state.bundle_repo_cred_username    = ""
+    if "bundle_repo_cred_password"    not in st.session_state: st.session_state.bundle_repo_cred_password    = ""
+    if "bundle_repo_cred_version"     not in st.session_state: st.session_state.bundle_repo_cred_version     = "v1"
+    if "bundle_repo_cred_layer"       not in st.session_state: st.session_state.bundle_repo_cred_layer       = "user"
+    if "bundle_repo_cred_acl"         not in st.session_state: st.session_state.bundle_repo_cred_acl         = "r"
+    if "bundle_repo_cred_secret_type" not in st.session_state: st.session_state.bundle_repo_cred_secret_type = "key-value"
     if "bundle_repo_cred_tags"  not in st.session_state:
         st.session_state.bundle_repo_cred_tags = [
             "dataos:type:resource", "dataos:type:cluster-resource",
@@ -91,3 +103,12 @@ def init_bundle_state():
         ]
     if "bundle_repo_cred_yaml"    not in st.session_state: st.session_state.bundle_repo_cred_yaml    = ""
     if "bundle_repo_cred_preview" not in st.session_state: st.session_state.bundle_repo_cred_preview = False
+    # ── Lens source / repo fields ─────────────────────────────────────────────
+    if "bundle_lens_src_name"    not in st.session_state: st.session_state.bundle_lens_src_name    = ""
+    if "bundle_lens_src_catalog" not in st.session_state: st.session_state.bundle_lens_src_catalog = ""
+    if "bundle_lens_src_type"    not in st.session_state: st.session_state.bundle_lens_src_type    = "minerva"
+    if "bundle_lens_repo_url"    not in st.session_state: st.session_state.bundle_lens_repo_url    = ""
+    if "bundle_lens_repo_basedir" not in st.session_state: st.session_state.bundle_lens_repo_basedir = ""
+    if "bundle_lens_version"     not in st.session_state: st.session_state.bundle_lens_version     = "v1alpha"
+    if "bundle_lens_layer"       not in st.session_state: st.session_state.bundle_lens_layer       = "user"
+    if "bundle_lens_compute"     not in st.session_state: st.session_state.bundle_lens_compute     = "runnable-default"

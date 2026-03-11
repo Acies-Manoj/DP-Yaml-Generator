@@ -29,10 +29,14 @@ def render_step4():
         st.caption("These will be stored as `GITSYNC_USERNAME` and `GITSYNC_PASSWORD` in the secret.")
         cred1, cred2 = st.columns(2)
         with cred1:
-            b_rc_username = st.text_input("Git Username", key="b_rc_username",
+            b_rc_username = st.text_input("Git Username",
+                value=st.session_state.bundle_repo_cred_username,
+                key="b_rc_username",
                 placeholder="e.g. your-git-username")
         with cred2:
-            b_rc_password = st.text_input("Git Token / Password", key="b_rc_password",
+            b_rc_password = st.text_input("Git Token / Password",
+                value=st.session_state.bundle_repo_cred_password,
+                key="b_rc_password",
                 type="password", placeholder="e.g. your-personal-access-token")
 
         st.divider()
@@ -57,11 +61,11 @@ def render_step4():
         with st.expander("⚙️ Advanced / Default Settings", expanded=False):
             st.caption("Pre-filled with standard defaults. Change only if needed.")
             adv1, adv2, adv3 = st.columns(3)
-            with adv1: b_rc_version  = st.text_input("Version",     value="v1",    key="b_rc_version")
-            with adv2: b_rc_layer    = st.text_input("Layer",       value="user",  key="b_rc_layer")
-            with adv3: b_rc_acl      = st.text_input("ACL",         value="r",     key="b_rc_acl",
+            with adv1: b_rc_version     = st.text_input("Version",     value=st.session_state.bundle_repo_cred_version,     key="b_rc_version")
+            with adv2: b_rc_layer       = st.text_input("Layer",       value=st.session_state.bundle_repo_cred_layer,       key="b_rc_layer")
+            with adv3: b_rc_acl         = st.text_input("ACL",         value=st.session_state.bundle_repo_cred_acl,         key="b_rc_acl",
                 help="r = read-only. Change to rw if write access is needed.")
-            b_rc_secret_type = st.text_input("Secret Type", value="key-value", key="b_rc_secret_type")
+            b_rc_secret_type = st.text_input("Secret Type", value=st.session_state.bundle_repo_cred_secret_type, key="b_rc_secret_type")
 
         st.divider()
         if st.button("Preview Repo Credential YAML ↓", key="b_rc_preview_bot", type="primary", use_container_width=True):
@@ -85,10 +89,17 @@ def render_step4():
                     "git_password": b_rc_password.strip(),
                 }
                 _generated_yaml = generate_repo_cred_yaml(cred_data)
-                st.session_state.bundle_repo_cred_yaml  = _generated_yaml
-                st.session_state.bundle_repo_cred_name  = b_rc_name.strip()
-                st.session_state.bundle_repo_cred_desc  = b_rc_desc.strip()
-                st.session_state.bundle_repo_cred_owner = b_rc_owner.strip()
+                # ── Persist all fields to session state ───────────────────
+                st.session_state.bundle_repo_cred_yaml        = _generated_yaml
+                st.session_state.bundle_repo_cred_name        = b_rc_name.strip()
+                st.session_state.bundle_repo_cred_desc        = b_rc_desc.strip()
+                st.session_state.bundle_repo_cred_owner       = b_rc_owner.strip()
+                st.session_state.bundle_repo_cred_username    = b_rc_username.strip()
+                st.session_state.bundle_repo_cred_password    = b_rc_password.strip()
+                st.session_state.bundle_repo_cred_version     = b_rc_version.strip()
+                st.session_state.bundle_repo_cred_layer       = b_rc_layer.strip()
+                st.session_state.bundle_repo_cred_acl         = b_rc_acl.strip()
+                st.session_state.bundle_repo_cred_secret_type = b_rc_secret_type.strip()
                 # Also store into the matching lens secret so cadp_flow.py
                 # can include it in the full CADP ZIP under secrets/
                 for sec in st.session_state.get("bundle_lens_secrets", []):

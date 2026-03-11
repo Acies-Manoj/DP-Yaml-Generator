@@ -71,15 +71,15 @@ def render_step5():
         # ── Source ────────────────────────────────────────────────────────
         st.markdown("#### Source")
         src1, src2 = st.columns(2)
-        with src1: b_src_name    = st.text_input("Name",    key="b_src_name",    placeholder="e.g. miniature")
-        with src2: b_src_catalog = st.text_input("Catalog", key="b_src_catalog", placeholder="e.g. icebase")
+        with src1: b_src_name    = st.text_input("Name",    value=st.session_state.bundle_lens_src_name,    key="b_src_name",    placeholder="e.g. miniature")
+        with src2: b_src_catalog = st.text_input("Catalog", value=st.session_state.bundle_lens_src_catalog, key="b_src_catalog", placeholder="e.g. icebase")
 
         st.divider()
 
         # ── Repo ──────────────────────────────────────────────────────────
         st.markdown("#### Repo")
-        b_repo_url     = st.text_input("URL",          key="b_repo_url",     placeholder="e.g. https://github.com/org/CustomerAnalyticsDP")
-        b_repo_basedir = st.text_input("lensBaseDir",  key="b_repo_basedir", placeholder="e.g. CustomerAnalyticsDP/build/model")
+        b_repo_url     = st.text_input("URL",         value=st.session_state.bundle_lens_repo_url,     key="b_repo_url",     placeholder="e.g. https://github.com/org/CustomerAnalyticsDP")
+        b_repo_basedir = st.text_input("lensBaseDir", value=st.session_state.bundle_lens_repo_basedir, key="b_repo_basedir", placeholder="e.g. CustomerAnalyticsDP/build/model")
 
         _lsfh1, _lsfh2 = st.columns([5, 1])
         with _lsfh1: st.markdown("**Sync Flags**")
@@ -105,10 +105,10 @@ def render_step5():
             st.caption("These are pre-filled with standard defaults. Only change if you need custom values.")
 
             adv1, adv2, adv3, adv4 = st.columns(4)
-            with adv1: b_lens_version = st.text_input("Version",      value="v1alpha",          key="b_lens_version")
-            with adv2: b_lens_layer   = st.text_input("Layer",        value="user",             key="b_lens_layer")
-            with adv3: b_lens_compute = st.text_input("Compute",      value="runnable-default", key="b_lens_compute")
-            with adv4: b_src_type     = st.text_input("Source Type",  value="minerva",          key="b_src_type")
+            with adv1: b_lens_version = st.text_input("Version",      value=st.session_state.bundle_lens_version,  key="b_lens_version")
+            with adv2: b_lens_layer   = st.text_input("Layer",        value=st.session_state.bundle_lens_layer,    key="b_lens_layer")
+            with adv3: b_lens_compute = st.text_input("Compute",      value=st.session_state.bundle_lens_compute,  key="b_lens_compute")
+            with adv4: b_src_type     = st.text_input("Source Type",  value=st.session_state.bundle_lens_src_type, key="b_src_type")
 
             st.markdown("**API**")
             a1, a2, a3, a4, a5, a6 = st.columns(6)
@@ -165,6 +165,14 @@ def render_step5():
                 st.session_state.bundle_generated_lens_yaml = generate_lens_yaml(lens_data)
                 st.session_state.bundle_lens_name           = b_lens_name.strip()
                 st.session_state.bundle_lens_desc_saved     = b_lens_desc.strip()
+                st.session_state.bundle_lens_src_name       = b_src_name.strip()
+                st.session_state.bundle_lens_src_catalog    = b_src_catalog.strip()
+                st.session_state.bundle_lens_src_type       = b_src_type.strip()
+                st.session_state.bundle_lens_repo_url       = b_repo_url.strip()
+                st.session_state.bundle_lens_repo_basedir   = b_repo_basedir.strip()
+                st.session_state.bundle_lens_version        = b_lens_version.strip()
+                st.session_state.bundle_lens_layer          = b_lens_layer.strip()
+                st.session_state.bundle_lens_compute        = b_lens_compute.strip()
                 st.session_state.bundle_lens_preview_mode   = True
                 st.rerun()
 
