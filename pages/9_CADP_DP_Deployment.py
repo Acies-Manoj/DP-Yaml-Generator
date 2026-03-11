@@ -2,12 +2,11 @@ import streamlit as st
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils.examples import EXAMPLE_BUNDLE, EXAMPLE_SPEC, EXAMPLE_DP_SCANNER, show_example
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 from utils.generators import generate_bundle_yaml, generate_spec_yaml, generate_dp_scanner_yaml
 
 st.set_page_config(page_title="CADP — DP Deployment", layout="wide")
+from utils.ui_utils import load_global_css
+load_global_css()
 
 st.markdown("""
 <style>
@@ -20,7 +19,7 @@ st.markdown("""
 # ─────────────────────────────────────────────────────────────────────────────
 DP_KEYS_TO_CLEAR = [
     "dp_step", "dp_preview_mode",
-    "dp_bundle_tags",
+    "dp_bundle_tags", "dp_bundle_qc_resources",
     "dp_spec_tags", "dp_spec_refs", "dp_spec_collaborators",
     "dp_spec_inputs", "dp_spec_outputs",
     "dp_scanner_tags", "dp_scanner_dag_tags", "dp_scanner_data_products",
@@ -30,8 +29,10 @@ DP_KEYS_TO_CLEAR = [
 
 for k, v in [
     ("dp_step",                  1),
+    ("dp_entry_step",            1),
     ("dp_preview_mode",          False),
     ("dp_bundle_tags",           ["dataproduct"]),
+    ("dp_bundle_qc_resources",   []),   # list of {file, workspace}
     ("dp_spec_tags",             [""]),
     ("dp_spec_refs",             [{"title": "Workspace Info", "href": "https://dataos.info/interfaces/cli/command_reference/#workspace"}]),
     ("dp_spec_collaborators",    [{"name": "", "description": "owner"}]),
@@ -72,8 +73,11 @@ with nav_l:
     else:
         if not st.session_state.dp_preview_mode:
             if st.button("← Back"):
-                st.session_state.dp_step -= 1
-                st.rerun()
+                if _dp_origin == "specific" and step == st.session_state.dp_entry_step:
+                    _dp_back()
+                else:
+                    st.session_state.dp_step -= 1
+                    st.rerun()
 with nav_r:
     if st.button("✖ Cancel / Start Over"):
         for k in DP_KEYS_TO_CLEAR:
@@ -83,7 +87,7 @@ with nav_r:
 st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Detect lens name from previous steps in session state
+# Auto-detect lens name & depot name from session state
 # ─────────────────────────────────────────────────────────────────────────────
 _lens_name = (
     st.session_state.get("cadp_lens_name", "")
@@ -91,8 +95,19 @@ _lens_name = (
     or st.session_state.get("lens_name_for_file", "")
 ).strip()
 
-# Pre-fill depot name from cadp full flow
 _depot_name = st.session_state.get("cadp_depot_name", "")
+
+# ── Auto-seed QC resources from CADP QC step if list is empty ────────────────
+_cadp_qc_name = st.session_state.get("cadp_qc_name", "").strip()
+_cadp_qc_skipped = 3 in st.session_state.get("cadp_skipped_steps", set())
+
+if (step == 1
+        and not st.session_state.dp_bundle_qc_resources
+        and _cadp_qc_name
+        and not _cadp_qc_skipped):
+    st.session_state.dp_bundle_qc_resources = [
+        {"file": f"build/quality-checks/{_cadp_qc_name}.yml", "workspace": "public"}
+    ]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STEP 1 — BUNDLE
@@ -104,12 +119,23 @@ if step == 1:
         show_example(st, "Bundle YAML", EXAMPLE_BUNDLE)
         st.caption(
             "The Bundle groups all resources for your data product. "
-            "The lens resource is always active; API, policy and quality blocks are rendered as comments to uncomment when needed."
+            "The Lens resource is always active. Add Quality Checks resources as needed."
         )
+
+        # Info banners outside form
+        if _cadp_qc_name and not _cadp_qc_skipped and st.session_state.dp_bundle_qc_resources:
+            st.info(
+                f"✅ First QC resource auto-filled from Quality Checks step — "
+                f"**{_cadp_qc_name}.yml**"
+            )
+        elif _cadp_qc_skipped:
+            st.warning("⚠️ Quality Checks was skipped — add QC resources manually if needed.")
+        elif not _cadp_qc_name:
+            st.caption("💡 Complete the Quality Checks step first to auto-fill the first QC resource.")
 
         with st.form("dp_bundle_form"):
 
-            # Metadata
+            # ── Metadata ─────────────────────────────────────────────────────
             st.markdown("#### Metadata")
             bm1, bm2 = st.columns(2)
             with bm1:
@@ -126,11 +152,13 @@ if step == 1:
                     height=100,
                 )
 
+            # ── Tags ─────────────────────────────────────────────────────────
             _bth1, _bth2 = st.columns([5, 1])
             with _bth1: st.markdown("**Tags**")
             with _bth2:
                 if st.form_submit_button("➕ Add", key="dp_add_btag"):
-                    st.session_state.dp_bundle_tags.append(""); st.rerun()
+                    st.session_state.dp_bundle_tags.append("")
+                    st.rerun()
             updated_bundle_tags = []
             for i, tag in enumerate(st.session_state.dp_bundle_tags):
                 tc1, tc2 = st.columns([5, 1])
@@ -141,11 +169,12 @@ if step == 1:
                 with tc2:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.form_submit_button("❌", key=f"dp_rm_btag_{i}"):
-                        st.session_state.dp_bundle_tags.pop(i); st.rerun()
+                        st.session_state.dp_bundle_tags.pop(i)
+                        st.rerun()
 
             st.divider()
 
-            # Lens resource
+            # ── Lens Resource ─────────────────────────────────────────────────
             st.markdown("#### Lens Resource")
             st.caption("This is always the first active resource in the bundle.")
             lc1, lc2 = st.columns(2)
@@ -158,11 +187,51 @@ if step == 1:
             with lc2:
                 b_lens_ws = st.text_input("Lens Workspace", value="public")
 
+            st.divider()
+
+            # ── Quality Checks Resources ──────────────────────────────────────
+            _qch1, _qch2 = st.columns([5, 1])
+            with _qch1:
+                st.markdown("#### Quality Checks Resources")
+                st.caption("Each entry becomes an active resource in the bundle. Path is relative to your repo root.")
+            with _qch2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.form_submit_button("➕ Add QC", key="dp_add_qc"):
+                    st.session_state.dp_bundle_qc_resources.append({"file": "", "workspace": "public"})
+                    st.rerun()
+
+            if not st.session_state.dp_bundle_qc_resources:
+                st.info("No QC resources added yet — click ➕ Add QC to add one.")
+
+            updated_qc_resources = []
+            for i, qc in enumerate(st.session_state.dp_bundle_qc_resources):
+                qc_cols = st.columns([4, 2, 0.7])
+                with qc_cols[0]:
+                    f_val = st.text_input(
+                        f"File Path #{i+1}",
+                        value=qc.get("file", ""),
+                        key=f"dp_qc_file_{i}",
+                        placeholder="e.g. build/quality-checks/soda-checks.yml",
+                    )
+                with qc_cols[1]:
+                    w_val = st.text_input(
+                        f"Workspace #{i+1}",
+                        value=qc.get("workspace", "public"),
+                        key=f"dp_qc_ws_{i}",
+                    )
+                with qc_cols[2]:
+                    st.markdown("<br><br>", unsafe_allow_html=True)
+                    if st.form_submit_button("❌", key=f"dp_rm_qc_{i}"):
+                        st.session_state.dp_bundle_qc_resources.pop(i)
+                        st.rerun()
+                updated_qc_resources.append({"file": f_val.strip(), "workspace": w_val.strip()})
+
             st.markdown(" ")
             submit1 = st.form_submit_button("Preview Bundle YAML →", use_container_width=True)
 
-        # Persist tags
-        st.session_state.dp_bundle_tags = updated_bundle_tags
+        # Persist outside form
+        st.session_state.dp_bundle_tags         = updated_bundle_tags
+        st.session_state.dp_bundle_qc_resources = updated_qc_resources
 
         if submit1:
             if not b_name.strip():
@@ -170,7 +239,8 @@ if step == 1:
             elif not b_desc.strip():
                 st.error("Description is required.")
             else:
-                st.session_state.dp_bundle_name = b_name.strip()
+                qc_list = [q for q in st.session_state.dp_bundle_qc_resources if q.get("file")]
+                st.session_state.dp_bundle_name      = b_name.strip()
                 st.session_state.dp_generated_bundle = generate_bundle_yaml({
                     "name":           b_name.strip(),
                     "description":    b_desc.strip(),
@@ -178,12 +248,12 @@ if step == 1:
                     "layer":          b_layer.strip() or "user",
                     "lens_file":      b_lens_file.strip(),
                     "lens_workspace": b_lens_ws.strip(),
+                    "qc_resources":   qc_list,
                 })
                 st.session_state.dp_preview_mode = True
                 st.rerun()
 
     else:
-        # Preview
         st.subheader("Step 1 — Bundle YAML Preview")
         st.code(st.session_state.dp_generated_bundle, language="yaml")
         pc1, pc2 = st.columns(2)
@@ -192,10 +262,21 @@ if step == 1:
                 st.session_state.dp_preview_mode = False
                 st.rerun()
         with pc2:
-            if st.button("Next: Spec →", use_container_width=True, type="primary"):
-                st.session_state.dp_preview_mode = False
-                st.session_state.dp_step = 2
-                st.rerun()
+            if _dp_origin == "specific":
+                bundle_fname = f"{st.session_state.get('dp_bundle_name', 'bundle')}.yml"
+                st.download_button(
+                    f"⬇ Download {bundle_fname}",
+                    data=st.session_state.dp_generated_bundle,
+                    file_name=bundle_fname,
+                    mime="text/yaml",
+                    use_container_width=True,
+                    type="primary",
+                )
+            else:
+                if st.button("Next: Spec →", use_container_width=True, type="primary"):
+                    st.session_state.dp_preview_mode = False
+                    st.session_state.dp_step = 2
+                    st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -211,7 +292,6 @@ elif step == 2:
             "The `resource` field automatically references the bundle name from Step 1."
         )
 
-        # Cross-ref info
         bundle_name_saved = st.session_state.get("dp_bundle_name", "")
         if bundle_name_saved:
             st.info(f"Bundle reference: `bundle:v1beta:{bundle_name_saved}` (auto-filled from Step 1)")
@@ -220,7 +300,6 @@ elif step == 2:
 
         with st.form("dp_spec_form"):
 
-            # Metadata
             st.markdown("#### Metadata")
             sm1, sm2 = st.columns(2)
             with sm1:
@@ -229,10 +308,7 @@ elif step == 2:
                     placeholder="e.g. productaffinity",
                     help="This name is used in the Scanner filter pattern — keep it short and unique.",
                 )
-                s_title = st.text_input(
-                    "Title",
-                    placeholder="e.g. Product Affinity",
-                )
+                s_title = st.text_input("Title", placeholder="e.g. Product Affinity")
             with sm2:
                 s_desc = st.text_area(
                     "Description *",
@@ -244,7 +320,8 @@ elif step == 2:
             with _sth1: st.markdown("**Tags**")
             with _sth2:
                 if st.form_submit_button("➕ Add", key="dp_add_stag"):
-                    st.session_state.dp_spec_tags.append(""); st.rerun()
+                    st.session_state.dp_spec_tags.append("")
+                    st.rerun()
             updated_spec_tags = []
             for i, tag in enumerate(st.session_state.dp_spec_tags):
                 stc1, stc2 = st.columns([5, 1])
@@ -255,11 +332,11 @@ elif step == 2:
                 with stc2:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.form_submit_button("❌", key=f"dp_rm_stag_{i}"):
-                        st.session_state.dp_spec_tags.pop(i); st.rerun()
+                        st.session_state.dp_spec_tags.pop(i)
+                        st.rerun()
 
             st.divider()
 
-            # Meta URLs
             st.markdown("#### Meta URLs")
             st.caption("Optional source code and tracker links.")
             mu1, mu2 = st.columns(2)
@@ -270,12 +347,12 @@ elif step == 2:
 
             st.divider()
 
-            # Refs
             _rh1, _rh2 = st.columns([5, 1])
             with _rh1: st.markdown("#### Refs")
             with _rh2:
                 if st.form_submit_button("➕ Add", key="dp_add_sref"):
-                    st.session_state.dp_spec_refs.append({"title": "", "href": ""}); st.rerun()
+                    st.session_state.dp_spec_refs.append({"title": "", "href": ""})
+                    st.rerun()
             st.caption("Reference links shown in the DataOS portal.")
             updated_spec_refs = []
             for i, ref in enumerate(st.session_state.dp_spec_refs):
@@ -290,17 +367,18 @@ elif step == 2:
                     if i > 0:
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.form_submit_button("❌", key=f"dp_rm_sref_{i}"):
-                            st.session_state.dp_spec_refs.pop(i); st.rerun()
+                            st.session_state.dp_spec_refs.pop(i)
+                            st.rerun()
                 updated_spec_refs.append({"title": title, "href": href})
 
             st.divider()
 
-            # Collaborators
             _ch1, _ch2 = st.columns([5, 1])
             with _ch1: st.markdown("#### Collaborators")
             with _ch2:
                 if st.form_submit_button("➕ Add", key="dp_add_scol"):
-                    st.session_state.dp_spec_collaborators.append({"name": "", "description": "consumer"}); st.rerun()
+                    st.session_state.dp_spec_collaborators.append({"name": "", "description": "consumer"})
+                    st.rerun()
             st.caption("List everyone involved — owner, developer, consumer.")
             ROLES = ["owner", "developer", "consumer"]
             updated_collaborators = []
@@ -319,18 +397,19 @@ elif step == 2:
                     if i > 0:
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.form_submit_button("❌", key=f"dp_rm_col_{i}"):
-                            st.session_state.dp_spec_collaborators.pop(i); st.rerun()
+                            st.session_state.dp_spec_collaborators.pop(i)
+                            st.rerun()
                 updated_collaborators.append({"name": name, "description": desc})
 
             st.divider()
 
-            # Inputs (pre-filled from Bundle)
             _ih1, _ih2 = st.columns([5, 1])
             with _ih1: st.markdown("#### Input Datasets")
             with _ih2:
                 if st.form_submit_button("➕ Add", key="dp_add_sinp"):
-                    st.session_state.dp_spec_inputs.append({"ref": ""}); st.rerun()
-            st.caption("Pre-filled from Bundle step — edit if needed. Format: `dataset:icebase:<collection>:<table>`")
+                    st.session_state.dp_spec_inputs.append({"ref": ""})
+                    st.rerun()
+            st.caption("Format: `dataset:icebase:<collection>:<table>`")
             for i, inp in enumerate(st.session_state.dp_spec_inputs):
                 sic1, sic2 = st.columns([5, 1])
                 with sic1:
@@ -343,17 +422,18 @@ elif step == 2:
                     if i > 0:
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.form_submit_button("❌", key=f"dp_rm_sinp_{i}"):
-                            st.session_state.dp_spec_inputs.pop(i); st.rerun()
+                            st.session_state.dp_spec_inputs.pop(i)
+                            st.rerun()
 
             st.divider()
 
-            # Outputs (pre-filled from Bundle)
             _oh1, _oh2 = st.columns([5, 1])
             with _oh1: st.markdown("#### Output Datasets")
             with _oh2:
                 if st.form_submit_button("➕ Add", key="dp_add_sout"):
-                    st.session_state.dp_spec_outputs.append({"ref": ""}); st.rerun()
-            st.caption("Pre-filled from Bundle step — edit if needed. Format: `dataset:icebase:<collection>:<table>`")
+                    st.session_state.dp_spec_outputs.append({"ref": ""})
+                    st.rerun()
+            st.caption("Format: `dataset:icebase:<collection>:<table>`")
             for i, out in enumerate(st.session_state.dp_spec_outputs):
                 soc1, soc2 = st.columns([5, 1])
                 with soc1:
@@ -366,16 +446,13 @@ elif step == 2:
                     if i > 0:
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.form_submit_button("❌", key=f"dp_rm_sout_{i}"):
-                            st.session_state.dp_spec_outputs.pop(i); st.rerun()
+                            st.session_state.dp_spec_outputs.pop(i)
+                            st.rerun()
 
             st.divider()
 
-            # Ports — lens workspace
             st.markdown("#### Ports")
-            st.caption(
-                "The Lens port is auto-filled from your Lens Deployment file. "
-                "Workspace is usually `public`."
-            )
+            st.caption("The Lens port is auto-filled from your Lens Deployment file.")
             sp1, sp2 = st.columns(2)
             with sp1:
                 s_lens_name_field = st.text_input(
@@ -390,20 +467,16 @@ elif step == 2:
             st.markdown(" ")
             submit2 = st.form_submit_button("Preview Spec YAML →", use_container_width=True)
 
-        # Persist lists
-        st.session_state.dp_spec_tags         = updated_spec_tags
-        st.session_state.dp_spec_refs         = updated_spec_refs
+        st.session_state.dp_spec_tags          = updated_spec_tags
+        st.session_state.dp_spec_refs          = updated_spec_refs
         st.session_state.dp_spec_collaborators = updated_collaborators
 
         if submit2:
             errors = []
-            if not s_name.strip():
-                errors.append("Spec Name is required.")
-            if not s_desc.strip():
-                errors.append("Description is required.")
+            if not s_name.strip(): errors.append("Spec Name is required.")
+            if not s_desc.strip(): errors.append("Description is required.")
             if errors:
-                for e in errors:
-                    st.error(e)
+                for e in errors: st.error(e)
             else:
                 st.session_state.dp_spec_name = s_name.strip()
                 st.session_state.dp_generated_spec = generate_spec_yaml({
@@ -421,7 +494,6 @@ elif step == 2:
                     "lens_name":       s_lens_name_field.strip() or _lens_name,
                     "lens_workspace":  s_lens_ws.strip(),
                 })
-                # carry spec name into scanner filter pattern
                 st.session_state.dp_scanner_data_products = [s_name.strip()]
                 st.session_state.dp_preview_mode = True
                 st.rerun()
@@ -435,10 +507,21 @@ elif step == 2:
                 st.session_state.dp_preview_mode = False
                 st.rerun()
         with pc2:
-            if st.button("Next: Scanner →", use_container_width=True, type="primary"):
-                st.session_state.dp_preview_mode = False
-                st.session_state.dp_step = 3
-                st.rerun()
+            if _dp_origin == "specific":
+                spec_fname = f"{st.session_state.get('dp_spec_name', 'spec')}.yml"
+                st.download_button(
+                    f"⬇ Download {spec_fname}",
+                    data=st.session_state.dp_generated_spec,
+                    file_name=spec_fname,
+                    mime="text/yaml",
+                    use_container_width=True,
+                    type="primary",
+                )
+            else:
+                if st.button("Next: Scanner →", use_container_width=True, type="primary"):
+                    st.session_state.dp_preview_mode = False
+                    st.session_state.dp_step = 3
+                    st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -469,16 +552,14 @@ elif step == 3:
                     help="Convention: scan-<product-name>",
                 )
             with scm2:
-                sc_desc = st.text_input(
-                    "Description",
-                    value="The job scans data product from poros",
-                )
+                sc_desc = st.text_input("Description", value="The job scans data product from poros")
 
             _scth1, _scth2 = st.columns([5, 1])
             with _scth1: st.markdown("**Tags**")
             with _scth2:
                 if st.form_submit_button("➕ Add", key="dp_add_scntag"):
-                    st.session_state.dp_scanner_tags.append(""); st.rerun()
+                    st.session_state.dp_scanner_tags.append("")
+                    st.rerun()
             updated_scanner_tags = []
             for i, tag in enumerate(st.session_state.dp_scanner_tags):
                 sct1, sct2 = st.columns([5, 1])
@@ -489,7 +570,8 @@ elif step == 3:
                 with sct2:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.form_submit_button("❌", key=f"dp_rm_scntag_{i}"):
-                        st.session_state.dp_scanner_tags.pop(i); st.rerun()
+                        st.session_state.dp_scanner_tags.pop(i)
+                        st.rerun()
 
             st.divider()
 
@@ -513,7 +595,8 @@ elif step == 3:
             with _sdth1: st.markdown("**DAG Tags**")
             with _sdth2:
                 if st.form_submit_button("➕ Add", key="dp_add_scndtag"):
-                    st.session_state.dp_scanner_dag_tags.append(""); st.rerun()
+                    st.session_state.dp_scanner_dag_tags.append("")
+                    st.rerun()
             updated_scanner_dag_tags = []
             for i, tag in enumerate(st.session_state.dp_scanner_dag_tags):
                 sdct1, sdct2 = st.columns([5, 1])
@@ -524,7 +607,8 @@ elif step == 3:
                 with sdct2:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.form_submit_button("❌", key=f"dp_rm_scndtag_{i}"):
-                        st.session_state.dp_scanner_dag_tags.pop(i); st.rerun()
+                        st.session_state.dp_scanner_dag_tags.pop(i)
+                        st.rerun()
 
             st.divider()
 
@@ -532,7 +616,8 @@ elif step == 3:
             with _dpfh1: st.markdown("#### Data Product Filter Pattern")
             with _dpfh2:
                 if st.form_submit_button("➕ Add", key="dp_add_dpfilter"):
-                    st.session_state.dp_scanner_data_products.append(""); st.rerun()
+                    st.session_state.dp_scanner_data_products.append("")
+                    st.rerun()
             st.caption(
                 "Pre-filled from the Spec name. "
                 "Each entry becomes an item under `dataProductFilterPattern.includes`."
@@ -550,12 +635,12 @@ elif step == 3:
                     if i > 0:
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.form_submit_button("❌", key=f"dp_rm_dpfilter_{i}"):
-                            st.session_state.dp_scanner_data_products.pop(i); st.rerun()
+                            st.session_state.dp_scanner_data_products.pop(i)
+                            st.rerun()
 
             st.markdown(" ")
             submit3 = st.form_submit_button("Preview Scanner YAML →", use_container_width=True)
 
-        # Persist lists
         st.session_state.dp_scanner_tags          = updated_scanner_tags
         st.session_state.dp_scanner_dag_tags      = updated_scanner_dag_tags
         st.session_state.dp_scanner_data_products = updated_dp_filters
@@ -565,16 +650,16 @@ elif step == 3:
                 st.error("Workflow Name is required.")
             else:
                 st.session_state.dp_generated_scanner = generate_dp_scanner_yaml({
-                    "name":          sc_name.strip(),
-                    "description":   sc_desc.strip(),
-                    "tags":          [t for t in st.session_state.dp_scanner_tags if t.strip()],
-                    "dag_name":      sc_dag_name.strip(),
-                    "dag_description": sc_dag_desc.strip(),
-                    "dag_tags":      [t for t in st.session_state.dp_scanner_dag_tags if t.strip()],
-                    "stack":         sc_stack.strip(),
-                    "compute":       sc_compute.strip(),
-                    "mark_deleted":  sc_mark_deleted,
-                    "data_products": [dp for dp in st.session_state.dp_scanner_data_products if dp.strip()],
+                    "name":              sc_name.strip(),
+                    "description":       sc_desc.strip(),
+                    "tags":              [t for t in st.session_state.dp_scanner_tags if t.strip()],
+                    "dag_name":          sc_dag_name.strip(),
+                    "dag_description":   sc_dag_desc.strip(),
+                    "dag_tags":          [t for t in st.session_state.dp_scanner_dag_tags if t.strip()],
+                    "stack":             sc_stack.strip(),
+                    "compute":           sc_compute.strip(),
+                    "mark_deleted":      sc_mark_deleted,
+                    "data_products":     [dp for dp in st.session_state.dp_scanner_data_products if dp.strip()],
                 })
                 st.session_state.dp_preview_mode = True
                 st.rerun()
@@ -588,10 +673,22 @@ elif step == 3:
                 st.session_state.dp_preview_mode = False
                 st.rerun()
         with pc2:
-            if st.button("Review All Files ✅", use_container_width=True, type="primary"):
-                st.session_state.dp_preview_mode = False
-                st.session_state.dp_step = 4
-                st.rerun()
+            if _dp_origin == "specific":
+                spec_name_for_file = st.session_state.get("dp_spec_name", "scanner")
+                sc_fname = f"scan-{spec_name_for_file}.yml"
+                st.download_button(
+                    f"⬇ Download {sc_fname}",
+                    data=st.session_state.dp_generated_scanner,
+                    file_name=sc_fname,
+                    mime="text/yaml",
+                    use_container_width=True,
+                    type="primary",
+                )
+            else:
+                if st.button("Review All Files ✅", use_container_width=True, type="primary"):
+                    st.session_state.dp_preview_mode = False
+                    st.session_state.dp_step = 4
+                    st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -645,9 +742,9 @@ elif step == 4:
     import zipfile, io
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w") as zf:
-        zf.writestr(f"{bundle_name}.yml",      bundle_yaml)
-        zf.writestr(f"{spec_name}.yml",         spec_yaml)
-        zf.writestr(f"scan-{spec_name}.yml",    scanner_yaml)
+        zf.writestr(f"{bundle_name}.yml",   bundle_yaml)
+        zf.writestr(f"{spec_name}.yml",      spec_yaml)
+        zf.writestr(f"scan-{spec_name}.yml", scanner_yaml)
     zip_buf.seek(0)
 
     st.download_button(

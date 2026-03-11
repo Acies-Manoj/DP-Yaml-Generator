@@ -47,6 +47,7 @@ def generate_descriptions(
     schema:        str = "",
     use_profiling: bool = False,
     use_cache:     bool = True,
+    user_context:  str = None,
 ) -> dict:
     """
     Generate table and column descriptions using an LLM.
@@ -63,6 +64,10 @@ def generate_descriptions(
         schema:        Snowflake schema name (required if conn is provided).
         use_profiling: If True and conn is provided, run lightweight table profiling.
         use_cache:     If True, check/write file cache to avoid re-calling LLM.
+        user_context:  Optional plain-text business context about the table/data.
+                       When provided, injected into the LLM prompt to improve accuracy.
+                       Useful when table names are cryptic (e.g. t_001, stg_xyz).
+                       Pass None (default) to use standard column-name-only behaviour.
 
     Returns:
         Dict with:
@@ -77,8 +82,10 @@ def generate_descriptions(
     """
 
     # ── Step 1: Check cache ───────────────────────────────────────────────────
+    # Cache key includes user_context so context-specific calls never return
+    # a stale context-free (or differently-contextualised) cached result.
     if use_cache:
-        cached = _cache.get(table_name, columns)
+        cached = _cache.get(table_name, columns, user_context=user_context)
         if cached:
             return cached
 
@@ -110,14 +117,14 @@ def generate_descriptions(
     )
 
     # ── Step 5: Build prompt ──────────────────────────────────────────────────
-    prompt = build_prompt(metadata)
+    prompt = build_prompt(metadata, user_context=user_context)
 
     # ── Step 6: Call LLM ──────────────────────────────────────────────────────
     result = call_llm(prompt, model_config)
 
     # ── Step 7: Save to cache ─────────────────────────────────────────────────
     if use_cache:
-        _cache.set(table_name, columns, result)
+        _cache.set(table_name, columns, result, user_context=user_context)
 
     return result
 
@@ -131,14 +138,17 @@ def generate_descriptions_multi(
     use_profiling: bool = False,
     use_cache:     bool = True,
     progress_cb=None,
+    user_context:  str = None,
 ) -> dict:
     """
     Generate descriptions for multiple tables in one call.
     Useful for batch processing in CADP flow.
 
     Args:
-        tables:      List of dicts: [{"name": str, "columns": [...]}, ...]
-        progress_cb: Optional callback(current, total, table_name) for Streamlit progress bar.
+        tables:       List of dicts: [{"name": str, "columns": [...]}, ...]
+        progress_cb:  Optional callback(current, total, table_name) for Streamlit progress bar.
+        user_context: Optional plain-text business context shared across all tables in this call.
+                      Pass None to use standard column-name-only behaviour.
 
     Returns:
         Dict keyed by table name: {"TABLE_NAME": {description result}, ...}
@@ -163,6 +173,7 @@ def generate_descriptions_multi(
                 schema=schema,
                 use_profiling=use_profiling,
                 use_cache=use_cache,
+                user_context=user_context,
             )
         except Exception as e:
             # On failure for one table, store error and continue with rest

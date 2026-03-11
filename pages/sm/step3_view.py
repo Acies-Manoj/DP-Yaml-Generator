@@ -67,15 +67,6 @@ def render_step3():
         vn_label = v.get("name") or f"View {vidx + 1}"
         st.markdown(f"**Editing: {vn_label}**")
 
-        # Add tag/exclude buttons
-        cvb1, cvb2 = st.columns(2)
-        with cvb1:
-            if st.button("Add Tag", key=f"v_add_tag_{vidx}"):
-                views[vidx]["view_tags"].append(""); st.rerun()
-        with cvb2:
-            if st.button("Add Metric Exclude", key=f"v_add_exc_{vidx}"):
-                views[vidx]["view_metric_excludes"].append(""); st.rerun()
-
         st.markdown("#### View Metadata")
         vvm1, vvm2 = st.columns(2)
         with vvm1:
@@ -90,6 +81,7 @@ def render_step3():
         st.markdown("#### Meta")
         b_view_title = st.text_input("Title", value=v.get("title",""), key=f"b_vtitle_{vidx}", placeholder="e.g. Customer Lifetime Value")
 
+        # ── Tags — Add Tag button inline at the bottom of the tags list ───────
         st.markdown("**Tags**")
         updated_view_tags = []
         for i, tag in enumerate(v.get("view_tags", [""])):
@@ -102,12 +94,14 @@ def render_step3():
                 if st.button("X", key=f"b_rm_vtag_{vidx}_{i}"):
                     views[vidx]["view_tags"].pop(i); st.rerun()
 
+        if st.button("＋ Add Tag", key=f"v_add_tag_{vidx}"):
+            views[vidx]["view_tags"].append(""); st.rerun()
+
         st.divider()
         st.markdown("#### Metric")
 
         # Cron preset dropdown
         _saved_expr = v.get("metric_expr", "*/45 * * * *")
-        # Figure out which preset matches the saved expression, default to Custom
         _preset_match = next((k for k, val in _CRON_PRESETS.items() if val == _saved_expr), "Custom")
         _preset_opts  = list(_CRON_PRESETS.keys())
 
@@ -119,8 +113,6 @@ def render_step3():
                 index=_preset_opts.index(_preset_match),
                 key=f"b_vcron_preset_{vidx}",
                 help="Pick a common schedule or choose Custom to write your own cron expression.")
-            # When a preset is chosen, force the text input to update by writing
-            # directly into session state before the widget renders
             if _sel_preset != "Custom":
                 _cron_value = _CRON_PRESETS[_sel_preset]
                 st.session_state[f"b_vexpr_{vidx}"] = _cron_value
@@ -137,6 +129,7 @@ def render_step3():
         with vm3:
             b_metric_win = st.text_input("Window", value=v.get("metric_win","day"), key=f"b_vwin_{vidx}")
 
+        # ── Metric Excludes — Add button inline at the bottom of the excludes list ──
         st.markdown("**Metric Excludes**")
         updated_view_excl = []
         for i, exc in enumerate(v.get("view_metric_excludes", [""])):
@@ -148,6 +141,9 @@ def render_step3():
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("X", key=f"b_rm_vexc_{vidx}_{i}"):
                     views[vidx]["view_metric_excludes"].pop(i); st.rerun()
+
+        if st.button("＋ Add Metric Exclude", key=f"v_add_exc_{vidx}"):
+            views[vidx]["view_metric_excludes"].append(""); st.rerun()
 
         views[vidx]["view_tags"]            = updated_view_tags
         views[vidx]["view_metric_excludes"] = updated_view_excl
@@ -271,4 +267,3 @@ def render_step3():
             if st.button("Continue to Repo Credential", use_container_width=True, type="primary"):
                 st.session_state.bundle_step = 4
                 st.rerun()
-
