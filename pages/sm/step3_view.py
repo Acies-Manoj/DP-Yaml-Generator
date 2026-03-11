@@ -60,6 +60,11 @@ def render_step3():
                     st.rerun()
         st.divider()
 
+    # Guard: reset vidx if out of range (happens when navigating back after views were cleared)
+    if views and vidx >= len(views):
+        st.session_state.bundle_view_idx = 0
+        vidx = 0
+
     v = views[vidx] if views else new_view()
 
     if not v.get("preview_mode"):
@@ -145,8 +150,9 @@ def render_step3():
         if st.button("＋ Add Metric Exclude", key=f"v_add_exc_{vidx}"):
             views[vidx]["view_metric_excludes"].append(""); st.rerun()
 
-        views[vidx]["view_tags"]            = updated_view_tags
-        views[vidx]["view_metric_excludes"] = updated_view_excl
+        if views and vidx < len(views):
+            views[vidx]["view_tags"]            = updated_view_tags
+            views[vidx]["view_metric_excludes"] = updated_view_excl
 
         # ── Tables (Join Paths) — OUTSIDE form so selectbox reruns immediately ──
         st.divider()
@@ -154,7 +160,7 @@ def render_step3():
         st.caption("Select tables from your SQL files. For each table, choose which fields to include.")
 
         # Init view_tables if empty
-        if not v.get("view_tables"):
+        if not v.get("view_tables") and views and vidx < len(views):
             views[vidx]["view_tables"] = [{"join_path": table_names[0] if table_names else "", "prefix": True, "includes": []}]
 
         updated_view_tables = []
