@@ -40,13 +40,27 @@ def render_step3():
     show_example(st, "View YAML", EXAMPLE_VIEW_YAML)
     st.caption("Views are optional. You can skip this step or add multiple views.")
 
-    # Buttons outside form
+    # Skip button
     vob1, vob2 = st.columns(2)
     with vob1:
         if st.button("Skip Views — Continue to Repo Credential", use_container_width=True):
             st.session_state.bundle_views = []
+            st.session_state.bundle_view_idx = 0
             st.session_state.bundle_step = 4
             st.rerun()
+
+    # ── Auto-initialise: always ensure at least one view exists ──────────────
+    if not st.session_state.bundle_views:
+        st.session_state.bundle_views.append(new_view())
+        st.rerun()
+
+    # Re-read after potential init above
+    views = st.session_state.bundle_views
+
+    # Guard: reset vidx if out of range
+    if vidx >= len(views):
+        st.session_state.bundle_view_idx = 0
+        vidx = 0
 
     # View tabs if multiple views
     if len(views) > 1:
@@ -60,12 +74,7 @@ def render_step3():
                     st.rerun()
         st.divider()
 
-    # Guard: reset vidx if out of range (happens when navigating back after views were cleared)
-    if views and vidx >= len(views):
-        st.session_state.bundle_view_idx = 0
-        vidx = 0
-
-    v = views[vidx] if views else new_view()
+    v = views[vidx]
 
     if not v.get("preview_mode"):
 
@@ -86,21 +95,27 @@ def render_step3():
         st.markdown("#### Meta")
         b_view_title = st.text_input("Title", value=v.get("title",""), key=f"b_vtitle_{vidx}", placeholder="e.g. Customer Lifetime Value")
 
-        # ── Tags — Add Tag button inline at the bottom of the tags list ───────
+        # ── Tags ──────────────────────────────────────────────────────────────
         st.markdown("**Tags**")
+        # Ensure view_tags is initialised
+        if not v.get("view_tags"):
+            views[vidx]["view_tags"] = [""]
         updated_view_tags = []
-        for i, tag in enumerate(v.get("view_tags", [""])):
-            vtc1, vtc2 = st.columns([5,1])
+        for i, tag in enumerate(views[vidx]["view_tags"]):
+            vtc1, vtc2 = st.columns([5, 1])
             with vtc1:
                 val = st.text_input(f"Tag {i+1}", value=tag, key=f"b_vtag_{vidx}_{i}", placeholder="e.g. DPDomain.Retail")
                 updated_view_tags.append(val)
             with vtc2:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("X", key=f"b_rm_vtag_{vidx}_{i}"):
-                    views[vidx]["view_tags"].pop(i); st.rerun()
+                    views[vidx]["view_tags"].pop(i)
+                    st.rerun()
+        views[vidx]["view_tags"] = updated_view_tags
 
         if st.button("＋ Add Tag", key=f"v_add_tag_{vidx}"):
-            views[vidx]["view_tags"].append(""); st.rerun()
+            views[vidx]["view_tags"].append("")
+            st.rerun()
 
         st.divider()
         st.markdown("#### Metric")
@@ -134,37 +149,39 @@ def render_step3():
         with vm3:
             b_metric_win = st.text_input("Window", value=v.get("metric_win","day"), key=f"b_vwin_{vidx}")
 
-        # ── Metric Excludes — Add button inline at the bottom of the excludes list ──
+        # ── Metric Excludes ───────────────────────────────────────────────────
         st.markdown("**Metric Excludes**")
+        # Ensure view_metric_excludes is initialised
+        if not v.get("view_metric_excludes"):
+            views[vidx]["view_metric_excludes"] = [""]
         updated_view_excl = []
-        for i, exc in enumerate(v.get("view_metric_excludes", [""])):
-            vec1, vec2 = st.columns([5,1])
+        for i, exc in enumerate(views[vidx]["view_metric_excludes"]):
+            vec1, vec2 = st.columns([5, 1])
             with vec1:
                 val = st.text_input(f"Exclude {i+1}", value=exc, key=f"b_vexc_{vidx}_{i}", placeholder="e.g. total_customers")
                 updated_view_excl.append(val)
             with vec2:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("X", key=f"b_rm_vexc_{vidx}_{i}"):
-                    views[vidx]["view_metric_excludes"].pop(i); st.rerun()
+                    views[vidx]["view_metric_excludes"].pop(i)
+                    st.rerun()
+        views[vidx]["view_metric_excludes"] = updated_view_excl
 
         if st.button("＋ Add Metric Exclude", key=f"v_add_exc_{vidx}"):
-            views[vidx]["view_metric_excludes"].append(""); st.rerun()
+            views[vidx]["view_metric_excludes"].append("")
+            st.rerun()
 
-        if views and vidx < len(views):
-            views[vidx]["view_tags"]            = updated_view_tags
-            views[vidx]["view_metric_excludes"] = updated_view_excl
-
-        # ── Tables (Join Paths) — OUTSIDE form so selectbox reruns immediately ──
+        # ── Tables (Join Paths) ───────────────────────────────────────────────
         st.divider()
         st.markdown("#### Tables (Join Paths)")
         st.caption("Select tables from your SQL files. For each table, choose which fields to include.")
 
-        # Init view_tables if empty
-        if not v.get("view_tables") and views and vidx < len(views):
+        # Ensure view_tables is initialised
+        if not views[vidx].get("view_tables"):
             views[vidx]["view_tables"] = [{"join_path": table_names[0] if table_names else "", "prefix": True, "includes": []}]
 
         updated_view_tables = []
-        for i, vt in enumerate(v.get("view_tables", [])):
+        for i, vt in enumerate(views[vidx]["view_tables"]):
             vt_col1, vt_col2, vt_col3 = st.columns([2, 1, 0.5])
             with vt_col1:
                 sel_tbl = st.selectbox(
@@ -183,7 +200,6 @@ def render_step3():
             # If user switched table, clear saved includes so stale fields don't carry over
             prev_includes = vt.get("includes", []) if vt.get("join_path") == sel_tbl else []
 
-            # Field checkboxes — react immediately since we're outside the form
             fields = get_table_fields(sel_tbl)
             if fields:
                 dim_fields  = [f for label, f in fields if label == "Dimension"]
@@ -214,7 +230,7 @@ def render_step3():
             views[vidx]["view_tables"].append({"join_path": table_names[0] if table_names else "", "prefix": True, "includes": []})
             st.rerun()
 
-        # ── PREVIEW BUTTON AT BOTTOM ──────────────────────────────────────
+        # ── Preview button ────────────────────────────────────────────────────
         st.divider()
         if st.button("Preview View YAML ↓", key=f"b_view_preview_bot_{vidx}", type="primary", use_container_width=True):
             st.session_state[f"b_view_preview_clicked_{vidx}"] = True
