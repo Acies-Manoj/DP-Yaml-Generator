@@ -1,41 +1,41 @@
 {
-  "table_description": "The BRANCH table stores information about different branches, with a composite primary key consisting of branch_id, region_code, subregion_code, and office_code. It provides details about the geographical and organizational structure of the branches.",
+  "table_description": "The branch table contains information about different branches, including their identifiers, locations, and office details. It serves as a reference for analyzing branch-specific data.",
   "columns": [
     {
       "name": "branch_id",
-      "description": "The branch_id column uniquely identifies records in the table, serving as part of the primary key to distinguish between different branches."
+      "description": "The branch_id column uniquely identifies each record in the table, serving as a primary key for branch-level analysis."
     },
     {
       "name": "gsscore_servicebranchnumber",
-      "description": "The gsscore_servicebranchnumber column stores a string value that may represent a service branch number, potentially used for analytical purposes to track or identify specific services or branches."
+      "description": "The gsscore_servicebranchnumber column stores a string value that may represent a service branch number, potentially used for identifying or categorizing branches."
     },
     {
       "name": "region_code",
-      "description": "The region_code column is part of the primary key, uniquely identifying records and possibly representing a geographical region, which can be used for aggregation or filtering in data analysis."
+      "description": "The region_code column is a primary key that uniquely identifies each record in conjunction with other primary keys, and it may represent a code for the region where the branch is located."
     },
     {
       "name": "region",
-      "description": "The region column stores a string value representing the name of a geographical region, which can be used for analytical purposes such as grouping or categorizing data by location."
+      "description": "The region column stores a string value representing the region where the branch is located, which can be used for geographical analysis or filtering."
     },
     {
       "name": "subregion_code",
-      "description": "The subregion_code column is part of the primary key, uniquely identifying records and possibly representing a subregion within a larger geographical area, useful for detailed geographical analysis."
+      "description": "The subregion_code column is a primary key that uniquely identifies each record in conjunction with other primary keys, and it may represent a code for the subregion within a region where the branch is located."
     },
     {
       "name": "subregion",
-      "description": "The subregion column stores a string value representing the name of a subregion, providing additional geographical context for data analysis and filtering."
+      "description": "The subregion column stores a string value representing the subregion within a region where the branch is located, which can be used for more detailed geographical analysis or filtering."
     },
     {
       "name": "gbo",
-      "description": "The gbo column stores a string value, but its purpose is ambiguous without additional context, potentially requiring further clarification for effective use in data analysis."
+      "description": "The gbo column stores a string value that may represent a geographical or organizational code, but its specific purpose is ambiguous without additional context."
     },
     {
       "name": "office_code",
-      "description": "The office_code column is part of the primary key, uniquely identifying records and possibly representing a specific office location, useful for tracking or analyzing data at the office level."
+      "description": "The office_code column is a primary key that uniquely identifies each record in conjunction with other primary keys, and it may represent a code for the office where the branch is located or associated with."
     },
     {
       "name": "office_name",
-      "description": "The office_name column stores a string value representing the name of an office, providing a human-readable identifier for offices, which can be used for filtering, grouping, or displaying data in reports and analyses."
+      "description": "The office_name column stores a string value representing the name of the office where the branch is located or associated with, which can be used for identifying or analyzing specific offices."
     }
   ]
 }

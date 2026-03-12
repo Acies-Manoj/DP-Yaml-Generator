@@ -270,9 +270,9 @@ def generate_repo_cred_yaml(d: dict) -> str:
 def generate_flare_yaml(d: dict) -> str:
     """Generate a Flare Workflow YAML string from a flare job config dict."""
     lines = []
-    lines.append("version: v1")
+    lines.append(f"version: {d.get('version', 'v1') or 'v1'}")
     lines.append(f"name: {d['name']}")
-    lines.append("type: workflow")
+    lines.append(f"type: {d.get('type', 'workflow') or 'workflow'}")
 
     tags = [t.strip() for t in d.get("tags", []) if t.strip()]
     if tags:
@@ -284,12 +284,13 @@ def generate_flare_yaml(d: dict) -> str:
         lines.append(f"description: {d['description'].strip()}")
 
     lines.append("workflow:")
+    if d.get("wf_title", "").strip():
+        lines.append(f"  title: {d['wf_title'].strip()}")
     lines.append("  # schedule:")
     if d.get("cron", "").strip():
         lines.append(f"  #   cron: '{d['cron'].strip()}'")
     else:
         lines.append("  #   cron: '00 20 * * *'")
-    lines.append("  #   # endOn: '2023-12-12T22:00:00Z'")
     lines.append("  #   concurrencyPolicy: Forbid")
 
     dag_name = d.get("dag_name", "").strip()
@@ -298,76 +299,93 @@ def generate_flare_yaml(d: dict) -> str:
         dag_name = "dg-" + wf[3:] if wf.startswith("wf-") else "dg-" + wf
 
     lines.append("  dag:")
-    lines.append(f"    - name: {dag_name}")
-    lines.append("      spec:")
+    lines.append(f"  - name: {dag_name}")
+    if d.get("dag_title", "").strip():
+        lines.append(f"    title: {d['dag_title'].strip()}")
+    if d.get("description", "").strip():
+        lines.append(f"    description: {d['description'].strip()}")
+    lines.append("    spec:")
 
     dag_tags = [t.strip() for t in d.get("dag_tags", []) if t.strip()]
     if dag_tags:
-        lines.append("        tags:")
+        lines.append("      tags:")
         for t in dag_tags:
-            lines.append(f"          - {t}")
+            lines.append(f"      - {t}")
 
-    lines.append(f"        stack: {d.get('stack', 'flare:6.0')}")
-    lines.append(f"        compute: {d.get('compute', 'runnable-default')}")
-    lines.append("        stackSpec:")
+    lines.append(f"      stack: {d.get('stack', 'flare:7.0')}")
+    lines.append(f"      compute: {d.get('compute', 'runnable-default')}")
+    lines.append("      stackSpec:")
 
     drv = d.get("driver", {})
-    lines.append("          driver:")
-    lines.append(f"            coreLimit: {drv.get('core_limit', '2000m')}")
-    lines.append(f"            cores: {drv.get('cores', 1)}")
-    lines.append(f"            memory: {drv.get('memory', '2000m')}")
+    lines.append("        driver:")
+    lines.append(f"          coreLimit: {drv.get('core_limit', '2000m')}")
+    lines.append(f"          cores: {drv.get('cores', 1)}")
+    lines.append(f"          memory: {drv.get('memory', '2000m')}")
 
     exc = d.get("executor", {})
-    lines.append("          executor:")
-    lines.append(f"            coreLimit: {exc.get('core_limit', '2000m')}")
-    lines.append(f"            cores: {exc.get('cores', 1)}")
-    lines.append(f"            instances: {exc.get('instances', 1)}")
-    lines.append(f"            memory: {exc.get('memory', '2000m')}")
+    lines.append("        executor:")
+    lines.append(f"          coreLimit: {exc.get('core_limit', '2000m')}")
+    lines.append(f"          cores: {exc.get('cores', 1)}")
+    lines.append(f"          instances: {exc.get('instances', 1)}")
+    lines.append(f"          memory: {exc.get('memory', '2000m')}")
 
-    lines.append("          job:")
-    lines.append(f"            explain: {'true' if d.get('explain', True) else 'false'}")
-    lines.append(f"            logLevel: {d.get('log_level', 'INFO')}")
+    lines.append("        job:")
+    lines.append(f"          explain: {'true' if d.get('explain', True) else 'false'}")
+    lines.append(f"          logLevel: {d.get('log_level', 'INFO')}")
 
     inputs = [i for i in d.get("inputs", []) if i.get("name", "").strip()]
     if inputs:
-        lines.append("            inputs:")
+        lines.append("          inputs:")
         for inp in inputs:
-            lines.append(f"              - name: {inp['name'].strip()}")
-            lines.append(f"                dataset: {inp['dataset'].strip()}")
-            lines.append(f"                format: {inp.get('format', 'csv')}")
-            if inp.get("infer_schema", True):
-                lines.append("                options:")
-                lines.append("                  inferSchema: true")
+            lines.append(f"           - name: {inp['name'].strip()}")
+            lines.append(f"             dataset: {inp['dataset'].strip()}")
+            lines.append(f"             format: {inp.get('format', 'csv')}")
+            if inp.get("schema_path", "").strip():
+                lines.append(f"             schemaPath: {inp['schema_path'].strip()}")
+            if inp.get("infer_schema", False):
+                lines.append("             options:")
+                lines.append("               inferSchema: true")
 
     steps = [s for s in d.get("steps", []) if s.get("name", "").strip()]
     if steps:
-        lines.append("            steps:")
-        lines.append("              - sequence:")
+        lines.append("          steps:")
+        lines.append("          - sequence:")
         for step in steps:
-            lines.append(f"                  - name: {step['name'].strip()}")
+            lines.append(f"              - name: {step['name'].strip()}")
+            if step.get("doc", "").strip():
+                lines.append(f"                doc: {step['doc'].strip()}")
             sql = step.get("sql", "").strip()
             if sql:
-                lines.append("                    sql: >")
+                lines.append("                sql: |")
                 for sql_line in sql.splitlines():
-                    lines.append(f"                      {sql_line}")
+                    lines.append(f"                    {sql_line}")
 
     outputs = [o for o in d.get("outputs", []) if o.get("name", "").strip()]
     if outputs:
-        lines.append("            outputs:")
+        lines.append("          outputs:")
         for out in outputs:
-            lines.append(f"              - name: {out['name'].strip()}")
-            lines.append(f"                dataset: {out['dataset'].strip()}")
-            lines.append(f"                format: {out.get('format', 'Iceberg')}")
-            lines.append("                options:")
-            lines.append(f"                  saveMode: {out.get('save_mode', 'overwrite')}")
-            lines.append("                  iceberg:")
-            lines.append("                    properties:")
-            lines.append(f"                      write.format.default: {out.get('write_format', 'parquet')}")
-            lines.append(f"                      write.metadata.compression-codec: {out.get('compression', 'gzip')}")
-            lines.append("                    # partitionSpec:")
-            lines.append("                    #   - type: day")
-            lines.append("                    #     column: date_time")
-            lines.append("                    #     name: day")
+            lines.append(f"            - name: {out['name'].strip()}")
+            lines.append(f"              dataset: {out['dataset'].strip()}")
+            lines.append(f"              format: {out.get('format', 'Iceberg')}")
+            if out.get("description", "").strip():
+                lines.append(f"              description: {out['description'].strip()}")
+            lines.append("              options:")
+            lines.append(f"                saveMode: {out.get('save_mode', 'append')}")
+            part_col = out.get("partition_col", "").strip()
+            if part_col:
+                lines.append("                sort:")
+                lines.append("                  mode: partition")
+                lines.append("                  columns:")
+                lines.append(f"                    - name: {part_col}")
+                lines.append(f"                      order: {out.get('partition_order', 'desc')}")
+            lines.append("                iceberg:")
+            lines.append("                  properties:")
+            lines.append(f"                    write.format.default: {out.get('write_format', 'parquet')}")
+            lines.append(f"                    write.metadata.compression-codec: {out.get('compression', 'gzip')}")
+            if part_col:
+                lines.append("                  partitionSpec:")
+                lines.append(f"                    - type: {out.get('partition_type', 'identity')}")
+                lines.append(f"                      column: {part_col}")
 
     return "\n".join(lines)
 

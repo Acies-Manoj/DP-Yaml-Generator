@@ -22,7 +22,23 @@ st.markdown("""
     letter-spacing: 0.05em;
     margin-bottom: 4px;
 }
+.floating-docs { position: fixed; bottom: 28px; right: 28px; z-index: 9999; }
+.floating-docs a {
+    display: flex; align-items: center; gap: 8px;
+    background: #1e2638; border: 1px solid #3b82f6;
+    color: #93c5fd !important; text-decoration: none !important;
+    padding: 10px 16px; border-radius: 999px;
+    font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.25); transition: all 0.2s ease;
+}
+.floating-docs a:hover {
+    background: #253047; border-color: #60a5fa; color: #bfdbfe !important;
+    box-shadow: 0 6px 20px rgba(59,130,246,0.4); transform: translateY(-2px);
+}
 </style>
+<div class="floating-docs">
+    <a href="https://dataos.info/resources/stacks/flare/" target="_blank">📖 Flare Docs</a>
+</div>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -37,11 +53,12 @@ FLARE_KEYS_TO_CLEAR = [
 for k, v in [
     ("flare_tags",     [""]),
     ("flare_dag_tags", [""]),
-    ("flare_inputs",   [{"name": "", "dataset": "", "format": "csv", "infer_schema": True}]),
-    ("flare_steps",    [{"name": "final", "sql": ""}]),
+    ("flare_inputs",   [{"name": "", "dataset": "", "format": "csv", "schema_path": "", "infer_schema": True}]),
+    ("flare_steps",    [{"name": "final", "doc": "", "sql": ""}]),
     ("flare_outputs",  [{
-        "name": "final", "dataset": "", "format": "Iceberg",
+        "name": "final", "dataset": "", "format": "Iceberg", "description": "",
         "save_mode": "overwrite", "write_format": "parquet", "compression": "gzip",
+        "partition_col": "", "partition_type": "identity", "partition_order": "desc",
     }]),
 ]:
     if k not in st.session_state:
@@ -74,17 +91,41 @@ st.caption("Generate a Flare Workflow YAML for ingesting and transforming data i
 st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ADD / REMOVE BUTTONS  (must be outside the form so they trigger reruns)
+# ADVANCED OPTIONS  (outside form — expanders not allowed inside forms)
 # ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-# CONSTANTS
-# ─────────────────────────────────────────────────────────────────────────────
-INPUT_FORMATS  = ["csv", "json", "parquet", "orc", "avro", "delta", "iceberg", "text"]
-OUTPUT_FORMATS = ["Iceberg", "parquet", "delta", "csv", "json", "orc"]
-SAVE_MODES     = ["overwrite", "append", "ignore", "errorIfExists"]
-WRITE_FORMATS  = ["parquet", "orc", "avro"]
-COMPRESSIONS   = ["gzip", "snappy", "zstd", "none"]
-LOG_LEVELS     = ["INFO", "DEBUG", "WARN", "ERROR"]
+with st.expander("⚙️ Advanced Options"):
+    st.caption("Pre-filled with standard defaults — edit only if needed.")
+    st.markdown("**Compute & Stack**")
+    cs1, cs2, cs3, cs4 = st.columns(4)
+    with cs1: st.text_input("Stack", value="flare:6.0", key="fadv_stack")
+    with cs2: st.text_input("Compute", value="runnable-default", key="fadv_compute")
+    with cs3: st.text_input("Log Level", value="INFO",
+                help="Common values: INFO, DEBUG, WARN, ERROR", key="fadv_log_level")
+    with cs4: st.checkbox("explain: true", value=True, key="fadv_explain")
+
+    st.markdown("**Driver**")
+    dr1, dr2, dr3 = st.columns(3)
+    with dr1: st.text_input("Core Limit", value="2000m", key="fadv_drv_cl")
+    with dr2: st.number_input("Cores", value=1, min_value=1, key="fadv_drv_c")
+    with dr3: st.text_input("Memory", value="2000m", key="fadv_drv_m")
+
+    st.markdown("**Executor**")
+    ex1, ex2, ex3, ex4 = st.columns(4)
+    with ex1: st.text_input("Core Limit", value="2000m", key="fadv_exc_cl")
+    with ex2: st.number_input("Cores", value=1, min_value=1, key="fadv_exc_c")
+    with ex3: st.number_input("Instances", value=1, min_value=1, key="fadv_exc_i")
+    with ex4: st.text_input("Memory", value="2000m", key="fadv_exc_m")
+
+_CRON_PRESETS = {
+    "None (commented out)": "",
+    "Every 15 minutes":     "*/15 * * * *",
+    "Every 30 minutes":     "*/30 * * * *",
+    "Every hour":           "0 * * * *",
+    "Every 6 hours":        "0 */6 * * *",
+    "Daily at 8 PM":        "00 20 * * *",
+    "Every day (midnight)": "0 0 * * *",
+    "Custom":               None,
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FORM
@@ -110,6 +151,14 @@ with st.form("flare_form"):
             value=st.session_state.get("flare_wf_desc", "Ingesting data into the lakehouse"),
         )
 
+    wm3, wm4 = st.columns(2)
+    with wm3:
+        wf_title = st.text_input(
+            "Workflow Title",
+            placeholder="e.g. Connect City",
+            help="Human-readable title shown in the DataOS UI.",
+        )
+
     _th1, _th2 = st.columns([5, 1])
     with _th1: st.markdown("**Tags**")
     with _th2:
@@ -127,27 +176,23 @@ with st.form("flare_form"):
             if st.form_submit_button("❌", key=f"rm_ftag_{i}"):
                 st.session_state.flare_tags.pop(i); st.rerun()
 
-    st.markdown("**Schedule** — rendered as comments in output (optional)")
-    cron_val = st.text_input(
-        "Cron Expression",
-        placeholder="e.g. 00 20 * * *",
-        help="Leave blank to keep the schedule block fully commented out.",
-    )
+    st.markdown("**Schedule** (optional)")
+    _preset_opts = list(_CRON_PRESETS.keys())
+    cr1, cr2 = st.columns(2)
+    with cr1:
+        cron_preset = st.selectbox(
+            "Schedule Preset", _preset_opts, index=0, key="flare_cron_preset",
+            help="Pick a common schedule, or choose Custom to type your own.")
+    with cr2:
+        cron_val = st.text_input(
+            "Cron Expression",
+            value=_CRON_PRESETS.get(cron_preset, "") or "",
+            placeholder="e.g. 00 20 * * *",
+            help="Auto-filled from preset. Editable when Custom is selected.",
+        )
 
     st.divider()
-
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 2 — Compute & Stack
-    # ══════════════════════════════════════════════════════════════════════════
-    st.subheader("Compute & Stack")
-    st.caption("Pre-filled with standard defaults — edit only if needed.")
-
-    cs1, cs2, cs3, cs4 = st.columns(4)
-    with cs1: stack     = st.text_input("Stack",     value="flare:6.0")
-    with cs2: compute   = st.text_input("Compute",   value="runnable-default")
-    with cs3: log_level = st.selectbox("Log Level",  LOG_LEVELS, index=0)
-    with cs4: explain   = st.checkbox("explain: true", value=True)
-
     _dth1, _dth2 = st.columns([5, 1])
     with _dth1: st.markdown("**DAG Tags**")
     with _dth2:
@@ -158,7 +203,7 @@ with st.form("flare_form"):
         dtc1, dtc2 = st.columns([5, 1])
         with dtc1:
             val = st.text_input(f"DAG Tag {i+1}", value=tag, key=f"fdtag_{i}",
-                                placeholder="e.g. crm", label_visibility="collapsed")
+                                placeholder="e.g. Connect", label_visibility="collapsed")
             updated_dag_tags.append(val)
         with dtc2:
             st.markdown("<br>", unsafe_allow_html=True)
@@ -168,28 +213,7 @@ with st.form("flare_form"):
     st.divider()
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 3 — Driver & Executor
-    # ══════════════════════════════════════════════════════════════════════════
-    st.subheader("Driver & Executor Resources")
-    st.caption("Pre-filled with standard defaults — edit only if needed.")
-
-    st.markdown("**Driver**")
-    dr1, dr2, dr3 = st.columns(3)
-    with dr1: drv_core_limit = st.text_input("Core Limit", value="2000m",  key="drv_cl")
-    with dr2: drv_cores      = st.number_input("Cores",    value=1, min_value=1, key="drv_c")
-    with dr3: drv_memory     = st.text_input("Memory",    value="2000m",  key="drv_m")
-
-    st.markdown("**Executor**")
-    ex1, ex2, ex3, ex4 = st.columns(4)
-    with ex1: exc_core_limit = st.text_input("Core Limit", value="2000m",  key="exc_cl")
-    with ex2: exc_cores      = st.number_input("Cores",    value=1, min_value=1, key="exc_c")
-    with ex3: exc_instances  = st.number_input("Instances", value=1, min_value=1, key="exc_i")
-    with ex4: exc_memory     = st.text_input("Memory",    value="2000m",  key="exc_m")
-
-    st.divider()
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 4 — Inputs
+    # SECTION 3 — Inputs
     # ══════════════════════════════════════════════════════════════════════════
     _inh1, _inh2 = st.columns([5, 1])
     with _inh1: st.subheader("Inputs")
@@ -197,32 +221,34 @@ with st.form("flare_form"):
         st.markdown("<br>", unsafe_allow_html=True)
         if st.form_submit_button("➕ Add Input", key="flare_add_inp"):
             st.session_state.flare_inputs.append(
-                {"name": "", "dataset": "", "format": "csv", "infer_schema": True}
+                {"name": "", "dataset": "", "format": "csv", "schema_path": "", "infer_schema": True}
             ); st.rerun()
-    st.caption("Define each input dataset. Dataset path format: `dataos://<depot>:<collection>/<file>?acl=rw`")
+    st.caption("Define each input dataset. Dataset path format: `dataos://<depot>:<collection>/<file>`")
 
     for i, inp in enumerate(st.session_state.flare_inputs):
         st.markdown(f"**Input {i + 1}**")
-        ic1, ic2, ic3, ic4 = st.columns([2.5, 3.5, 1.5, 1])
+        ic1, ic2 = st.columns(2)
         with ic1:
             st.session_state.flare_inputs[i]["name"] = st.text_input(
                 "Input Name *", value=inp["name"], key=f"inp_name_{i}",
-                placeholder="e.g. product_data",
+                placeholder="e.g. city_connect",
             )
-        with ic2:
             st.session_state.flare_inputs[i]["dataset"] = st.text_input(
                 "Dataset Path *", value=inp["dataset"], key=f"inp_ds_{i}",
-                placeholder="e.g. dataos://thirdparty01:onboarding/product.csv?acl=rw",
+                placeholder="e.g. dataos://thirdparty01:none/city",
             )
-        with ic3:
-            st.session_state.flare_inputs[i]["format"] = st.selectbox(
-                "Format",
-                INPUT_FORMATS,
-                index=INPUT_FORMATS.index(inp["format"]) if inp["format"] in INPUT_FORMATS else 0,
-                key=f"inp_fmt_{i}",
+        with ic2:
+            st.session_state.flare_inputs[i]["format"] = st.text_input(
+                "Format", value=inp.get("format", "csv"), key=f"inp_fmt_{i}",
+                help="csv, json, parquet, orc, avro, delta, iceberg…",
             )
-        with ic4:
-            st.markdown("<br>", unsafe_allow_html=True)
+            st.session_state.flare_inputs[i]["schema_path"] = st.text_input(
+                "Schema Path (optional)", value=inp.get("schema_path", ""), key=f"inp_sp_{i}",
+                placeholder="e.g. dataos://thirdparty01:none/schemas/avsc/city.avsc",
+                help="Avro schema path — rendered as schemaPath in YAML.",
+            )
+        ia1, _ = st.columns([2, 4])
+        with ia1:
             st.session_state.flare_inputs[i]["infer_schema"] = st.checkbox(
                 "inferSchema", value=inp.get("infer_schema", True), key=f"inp_is_{i}",
                 help="Adds options.inferSchema: true — recommended for CSV.",
@@ -236,14 +262,14 @@ with st.form("flare_form"):
     st.divider()
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 5 — Steps (SQL transformations)
+    # SECTION 4 — Steps (SQL transformations)
     # ══════════════════════════════════════════════════════════════════════════
     _sth1, _sth2 = st.columns([5, 1])
     with _sth1: st.subheader("Steps")
     with _sth2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.form_submit_button("➕ Add Step", key="flare_add_step"):
-            st.session_state.flare_steps.append({"name": "", "sql": ""}); st.rerun()
+            st.session_state.flare_steps.append({"name": "", "doc": "", "sql": ""}); st.rerun()
     st.caption("Each step is a named SQL transformation. The step name must match the corresponding output name below.")
 
     for i, step in enumerate(st.session_state.flare_steps):
@@ -252,18 +278,21 @@ with st.form("flare_form"):
         with sc1:
             st.session_state.flare_steps[i]["name"] = st.text_input(
                 "Step Name *", value=step["name"], key=f"step_name_{i}",
-                placeholder="e.g. final",
-                help="Use 'final' for the last step — this name links to the output.",
+                placeholder="e.g. cities",
+                help="This name links to the output.",
+            )
+            st.session_state.flare_steps[i]["doc"] = st.text_input(
+                "Doc (optional)", value=step.get("doc", ""), key=f"step_doc_{i}",
+                placeholder="Short description of this step",
             )
         with sc2:
             st.session_state.flare_steps[i]["sql"] = st.text_area(
                 "SQL *", value=step["sql"], key=f"step_sql_{i}", height=160,
                 placeholder=(
                     "SELECT\n"
-                    "  CAST(customer_id AS DOUBLE) as customer_id,\n"
-                    "  product_id,\n"
-                    "  product_name\n"
-                    "FROM product_data"
+                    "  *,\n"
+                    "  date_format(now(), 'yyyyMMddHHmm') AS version\n"
+                    "FROM city_connect"
                 ),
             )
         if i > 0:
@@ -275,7 +304,7 @@ with st.form("flare_form"):
     st.divider()
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 6 — Outputs
+    # SECTION 5 — Outputs
     # ══════════════════════════════════════════════════════════════════════════
     _oth1, _oth2 = st.columns([5, 1])
     with _oth1: st.subheader("Outputs")
@@ -283,48 +312,66 @@ with st.form("flare_form"):
         st.markdown("<br>", unsafe_allow_html=True)
         if st.form_submit_button("➕ Add Output", key="flare_add_out"):
             st.session_state.flare_outputs.append({
-                "name": "final", "dataset": "", "format": "Iceberg",
+                "name": "", "dataset": "", "format": "Iceberg", "description": "",
                 "save_mode": "overwrite", "write_format": "parquet", "compression": "gzip",
+                "partition_col": "", "partition_type": "identity", "partition_order": "desc",
             }); st.rerun()
-    st.caption("Each output writes a step result to a DataOS dataset. Output name must match the step name above. Dataset path format: `dataos://<depot>:<collection>/<table>?acl=rw`")
+    st.caption("Output name must match step name. Dataset path: `dataos://<depot>:<collection>/<table>?acl=rw`")
 
     for i, out in enumerate(st.session_state.flare_outputs):
         st.markdown(f"**Output {i + 1}**")
-        oc1, oc2 = st.columns(2)
+        oc1, oc2, oc3 = st.columns(3)
         with oc1:
             st.session_state.flare_outputs[i]["name"] = st.text_input(
                 "Output Name *", value=out["name"], key=f"out_name_{i}",
-                placeholder="e.g. final",
+                placeholder="e.g. cities",
                 help="Must match the step name whose result you want to write.",
             )
             st.session_state.flare_outputs[i]["dataset"] = st.text_input(
                 "Dataset Path *", value=out["dataset"], key=f"out_ds_{i}",
-                placeholder="e.g. dataos://icebase:crm/product_data?acl=rw",
+                placeholder="e.g. dataos://lakehouse01:retailsample/city?acl=rw",
+            )
+            st.session_state.flare_outputs[i]["description"] = st.text_input(
+                "Description (optional)", value=out.get("description", ""), key=f"out_desc_{i}",
+                placeholder="e.g. City data ingested from external csv",
             )
         with oc2:
-            oa1, oa2 = st.columns(2)
-            with oa1:
-                st.session_state.flare_outputs[i]["format"] = st.selectbox(
-                    "Format", OUTPUT_FORMATS,
-                    index=OUTPUT_FORMATS.index(out["format"]) if out["format"] in OUTPUT_FORMATS else 0,
-                    key=f"out_fmt_{i}",
-                )
-                st.session_state.flare_outputs[i]["save_mode"] = st.selectbox(
-                    "Save Mode", SAVE_MODES,
-                    index=SAVE_MODES.index(out["save_mode"]) if out["save_mode"] in SAVE_MODES else 0,
-                    key=f"out_sm_{i}",
-                )
-            with oa2:
-                st.session_state.flare_outputs[i]["write_format"] = st.selectbox(
-                    "write.format.default", WRITE_FORMATS,
-                    index=WRITE_FORMATS.index(out["write_format"]) if out["write_format"] in WRITE_FORMATS else 0,
-                    key=f"out_wf_{i}",
-                )
-                st.session_state.flare_outputs[i]["compression"] = st.selectbox(
-                    "compression-codec", COMPRESSIONS,
-                    index=COMPRESSIONS.index(out["compression"]) if out["compression"] in COMPRESSIONS else 0,
-                    key=f"out_comp_{i}",
-                )
+            st.session_state.flare_outputs[i]["format"] = st.text_input(
+                "Format", value=out.get("format", "Iceberg"), key=f"out_fmt_{i}",
+                help="Iceberg, parquet, delta, csv, json…",
+            )
+            st.session_state.flare_outputs[i]["save_mode"] = st.text_input(
+                "Save Mode", value=out.get("save_mode", "overwrite"), key=f"out_sm_{i}",
+                help="overwrite, append, ignore, errorIfExists",
+            )
+        with oc3:
+            st.session_state.flare_outputs[i]["write_format"] = st.text_input(
+                "write.format.default", value=out.get("write_format", "parquet"), key=f"out_wf_{i}",
+                help="parquet, orc, avro",
+            )
+            st.session_state.flare_outputs[i]["compression"] = st.text_input(
+                "compression-codec", value=out.get("compression", "gzip"), key=f"out_comp_{i}",
+                help="gzip, snappy, zstd, none",
+            )
+
+        st.markdown("**Partition / Sort** (optional — leave blank to skip)")
+        pc1, pc2, pc3 = st.columns(3)
+        with pc1:
+            st.session_state.flare_outputs[i]["partition_col"] = st.text_input(
+                "Partition Column", value=out.get("partition_col", ""), key=f"out_pc_{i}",
+                placeholder="e.g. version",
+            )
+        with pc2:
+            st.session_state.flare_outputs[i]["partition_type"] = st.text_input(
+                "Partition Type", value=out.get("partition_type", "identity"), key=f"out_pt_{i}",
+                help="identity, day, month, year, hour…",
+            )
+        with pc3:
+            st.session_state.flare_outputs[i]["partition_order"] = st.text_input(
+                "Sort Order", value=out.get("partition_order", "desc"), key=f"out_po_{i}",
+                help="asc or desc",
+            )
+
         if i > 0:
             if st.form_submit_button("❌ Remove Output", key=f"rm_out_{i}"):
                 st.session_state.flare_outputs.pop(i); st.rerun()
@@ -370,23 +417,24 @@ if generate_btn:
         flare_data = {
             "name":        wf_name.strip(),
             "description": wf_desc.strip(),
+            "wf_title":    wf_title.strip(),
             "tags":        [t for t in st.session_state.flare_tags     if t.strip()],
             "dag_tags":    [t for t in st.session_state.flare_dag_tags if t.strip()],
-            "cron":        cron_val.strip(),
-            "stack":       stack.strip(),
-            "compute":     compute.strip(),
-            "log_level":   log_level,
-            "explain":     explain,
+            "cron":        cron_val.strip() if cron_preset == "Custom" else (_CRON_PRESETS.get(cron_preset) or ""),
+            "stack":       st.session_state.get("fadv_stack", "flare:6.0") or "flare:6.0",
+            "compute":     st.session_state.get("fadv_compute", "runnable-default") or "runnable-default",
+            "log_level":   st.session_state.get("fadv_log_level", "INFO") or "INFO",
+            "explain":     st.session_state.get("fadv_explain", True),
             "driver": {
-                "core_limit": drv_core_limit.strip(),
-                "cores":      int(drv_cores),
-                "memory":     drv_memory.strip(),
+                "core_limit": st.session_state.get("fadv_drv_cl", "2000m"),
+                "cores":      int(st.session_state.get("fadv_drv_c", 1)),
+                "memory":     st.session_state.get("fadv_drv_m", "2000m"),
             },
             "executor": {
-                "core_limit": exc_core_limit.strip(),
-                "cores":      int(exc_cores),
-                "instances":  int(exc_instances),
-                "memory":     exc_memory.strip(),
+                "core_limit": st.session_state.get("fadv_exc_cl", "2000m"),
+                "cores":      int(st.session_state.get("fadv_exc_c", 1)),
+                "instances":  int(st.session_state.get("fadv_exc_i", 1)),
+                "memory":     st.session_state.get("fadv_exc_m", "2000m"),
             },
             "inputs":  st.session_state.flare_inputs,
             "steps":   st.session_state.flare_steps,

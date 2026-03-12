@@ -1,0 +1,9 @@
+{
+  "table_description": "The sd table contains a single column of string data, the purpose of which is not immediately clear without additional context. It may be used to store various types of string information.",
+  "columns": [
+    {
+      "name": "sd",
+      "description": "The sd column is a string field that may contain various types of text data, but its specific analytical purpose is ambiguous without more information."
+    }
+  ]
+}

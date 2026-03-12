@@ -1,15 +1,21 @@
 # Core app framework
-streamlit>=1.35.0
+streamlit
 
 # Snowflake connectivity
-snowflake-connector-python>=3.10.0
+snowflake-connector-python
 
-# Excel file handling (used in description_engine)
-openpyxl>=3.1.2
+# Excel file handling (Quality Checks Excel generation)
+openpyxl
 
-# Environment variable loading
-python-dotenv>=1.0.0
+# Environment variable loading (.env file)
+python-dotenv
 
-# LLM providers (for AI description generation)
-groq>=0.9.0          # Groq cloud API (recommended)
-requests>=2.31.0     # For Ollama local inference
+# LLM providers (AI description generation + QC suggestions)
+groq
+requests
+
+# YAML parsing (used in qc_yaml_generator.py)
+pyyaml
+
+# Data handling (used in sf_utils, description_engine)
+pandas

@@ -34,11 +34,43 @@ st.markdown("""
     font-size: 13px;
     margin: 2px 4px 2px 0;
 }
+.floating-docs {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    z-index: 9999;
+}
+.floating-docs a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #1e2638;
+    border: 1px solid #3b82f6;
+    color: #93c5fd !important;
+    text-decoration: none !important;
+    padding: 10px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.25);
+    transition: all 0.2s ease;
+}
+.floating-docs a:hover {
+    background: #253047;
+    border-color: #60a5fa;
+    color: #bfdbfe !important;
+    box-shadow: 0 6px 20px rgba(59,130,246,0.4);
+    transform: translateY(-2px);
+}
 </style>
+<div class="floating-docs">
+    <a href="https://dataos.info/resources/depot/" target="_blank">📖 Depot Docs</a>
+</div>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BACK NAVIGATION — context-aware (SADP vs CADP)
+# BACK NAVIGATION
 # ─────────────────────────────────────────────────────────────────────────────
 origin = st.session_state.get("depot_origin", "cadp")
 
@@ -59,7 +91,6 @@ DEPOT_KEYS_TO_CLEAR = [
     "depot_yaml_r", "depot_yaml_rw", "depot_yaml_depot", "depot_yaml_scanner",
 ]
 
-# Keys to preserve when returning to full DP flow
 DEPOT_CRED_KEYS = {"depot_username", "depot_password", "depot_account", "depot_warehouse", "depot_url", "depot_database"}
 DEPOT_YAML_KEYS = {"depot_yaml_r", "depot_yaml_rw", "depot_yaml_depot", "depot_yaml_scanner", "depot_base_name"}
 
@@ -84,7 +115,7 @@ for k, v in [
 
 step = st.session_state.depot_step
 source = st.session_state.get("depot_source")
-specific_file = st.session_state.get("depot_specific_file")  # set by specific file picker
+specific_file = st.session_state.get("depot_specific_file")
 
 STEP_LABELS = [
     "1. Credentials & Naming",
@@ -99,7 +130,6 @@ STEP_LABELS = [
 source_label = f" — {source}" if source else ""
 st.title(f"Depot Builder{source_label}")
 
-# Progress bar — only show after source is selected
 if step > 0:
     label = STEP_LABELS[step - 1] if step <= 4 else "Complete"
     st.progress((step - 1) / 4, text=f"Step {step} of 4 — {label}")
@@ -118,7 +148,6 @@ def _back_to_origin():
     else:
         st.switch_page("pages/1_CADP.py")
 
-# Nav row
 nav_l, _, nav_r = st.columns([1, 4, 1.5])
 with nav_l:
     if step == 0:
@@ -139,9 +168,8 @@ with nav_r:
 st.divider()
 
 
-
 # ══════════════════════════════════════════════════════════════════════════════
-# INDIVIDUAL MODE — render a single file directly (from specific file picker)
+# INDIVIDUAL MODE
 # ══════════════════════════════════════════════════════════════════════════════
 if origin == "specific" and specific_file:
 
@@ -156,23 +184,21 @@ if origin == "specific" and specific_file:
     # ── Individual: Secret R ──────────────────────────────────────────────────
     if specific_file == "secret_r":
         show_example(st, "Instance Secret R", EXAMPLE_SECRET_R)
+        with st.expander("⚙️ Advanced Options"):
+            adv1, adv2 = st.columns(2)
+            with adv1:
+                st.text_input("Layer", value="user", key="ind_r_layer")
+            with adv2:
+                st.text_input("Description", placeholder="Auto-generated if blank", key="ind_r_desc")
         with st.form("ind_secret_r_form"):
-            st.markdown("#### Naming")
+            st.markdown("#### Credentials")
             c1, c2 = st.columns(2)
             with c1:
                 base_name = st.text_input("Secret Name *", placeholder="e.g. depot-name-r",
                     help="Convention: {depot-name}-r")
-                layer = st.text_input("Layer", value="user")
             with c2:
-                desc = st.text_input("Description",
-                    placeholder="e.g. read instance-secret for depot snowflake depot")
-            st.divider()
-            st.markdown("#### Credentials")
-            cr1, cr2 = st.columns(2)
-            with cr1:
                 username = st.text_input("Username *", placeholder="e.g. snowflake_user")
-            with cr2:
-                password = st.text_input("Password *", type="password")
+            password = st.text_input("Password *", type="password")
             st.markdown(" ")
             sub = st.form_submit_button("Generate YAML", use_container_width=True)
         if sub:
@@ -181,8 +207,10 @@ if origin == "specific" and specific_file:
             elif not username.strip() or not password.strip():
                 st.error("Username and Password are required.")
             else:
+                layer = st.session_state.get("ind_r_layer", "user") or "user"
+                desc  = st.session_state.get("ind_r_desc", "")
                 yaml_out = generate_secret_r_yaml({
-                    "name": base_name.strip(), "layer": layer.strip() or "user",
+                    "name": base_name.strip(), "layer": layer.strip(),
                     "username": username.strip(), "password": password,
                     "desc_r": desc.strip() or f"read instance-secret for {base_name.strip()} snowflake depot",
                     "desc_rw": "",
@@ -195,23 +223,21 @@ if origin == "specific" and specific_file:
     # ── Individual: Secret RW ─────────────────────────────────────────────────
     elif specific_file == "secret_rw":
         show_example(st, "Instance Secret RW", EXAMPLE_SECRET_RW)
+        with st.expander("⚙️ Advanced Options"):
+            adv1, adv2 = st.columns(2)
+            with adv1:
+                st.text_input("Layer", value="user", key="ind_rw_layer")
+            with adv2:
+                st.text_input("Description", placeholder="Auto-generated if blank", key="ind_rw_desc")
         with st.form("ind_secret_rw_form"):
-            st.markdown("#### Naming")
+            st.markdown("#### Credentials")
             c1, c2 = st.columns(2)
             with c1:
                 base_name = st.text_input("Secret Name *", placeholder="e.g. depot-name-rw",
                     help="Convention: {depot-name}-rw")
-                layer = st.text_input("Layer", value="user")
             with c2:
-                desc = st.text_input("Description",
-                    placeholder="e.g. read-write instance-secret for depot snowflake depot")
-            st.divider()
-            st.markdown("#### Credentials")
-            cr1, cr2 = st.columns(2)
-            with cr1:
                 username = st.text_input("Username *", placeholder="e.g. snowflake_user")
-            with cr2:
-                password = st.text_input("Password *", type="password")
+            password = st.text_input("Password *", type="password")
             st.markdown(" ")
             sub = st.form_submit_button("Generate YAML", use_container_width=True)
         if sub:
@@ -220,10 +246,12 @@ if origin == "specific" and specific_file:
             elif not username.strip() or not password.strip():
                 st.error("Username and Password are required.")
             else:
+                layer = st.session_state.get("ind_rw_layer", "user") or "user"
+                desc  = st.session_state.get("ind_rw_desc", "")
                 yaml_out = generate_secret_rw_yaml({
-                    "name": base_name.strip(), "layer": layer.strip() or "user",
+                    "name": base_name.strip(), "layer": layer.strip(),
                     "username": username.strip(), "password": password,
-                    "desc_r": "", 
+                    "desc_r": "",
                     "desc_rw": desc.strip() or f"read-write instance-secret for {base_name.strip()} snowflake depot",
                 })
                 st.code(yaml_out, language="yaml")
@@ -235,24 +263,28 @@ if origin == "specific" and specific_file:
     elif specific_file == "depot":
         show_example(st, "Depot YAML", EXAMPLE_DEPOT)
 
-        # tags managed outside form
         if "depot_tags" not in st.session_state:
             st.session_state.depot_tags = ["snowflake depot", "user data"]
+
+        with st.expander("⚙️ Advanced Options"):
+            adv1, adv2 = st.columns(2)
+            with adv1:
+                st.text_input("Layer", value="user", key="ind_dep_layer")
+            with adv2:
+                st.checkbox("External", value=True, key="ind_dep_external",
+                    help="Always true for Snowflake.")
 
         with st.form("ind_depot_form"):
             st.markdown("#### Metadata")
             m1, m2 = st.columns(2)
             with m1:
                 dep_name = st.text_input("Depot Name *", placeholder="e.g. sampleobs")
-                layer = st.text_input("Layer", value="user")
             with m2:
                 description = st.text_input("Description *",
                     value="Depot to fetch data from Snowflake datasource")
-                external = st.checkbox("External", value=True)
 
             st.markdown("#### Tags")
             _th1, _th2 = st.columns([5, 1])
-            with _th1: st.markdown("**Tags**")
             with _th2:
                 if st.form_submit_button("➕ Add", key="ind_depot_add_tag"):
                     st.session_state.depot_tags.append(""); st.rerun()
@@ -270,9 +302,8 @@ if origin == "specific" and specific_file:
 
             st.divider()
             st.markdown("#### Secrets")
-            st.caption("The depot references two instance secrets — enter the base name and -r / -rw suffixes are added automatically.")
-            secret_base = st.text_input("Secret Base Name *", placeholder="e.g. sampleobs",
-                help="Generates references to {name}-r and {name}-rw")
+            st.caption("Enter the base name — `-r` and `-rw` suffixes are added automatically.")
+            secret_base = st.text_input("Secret Base Name *", placeholder="e.g. sampleobs")
 
             st.divider()
             st.markdown("#### Snowflake Connection")
@@ -300,11 +331,13 @@ if origin == "specific" and specific_file:
             if errors:
                 for e in errors: st.error(e)
             else:
+                layer    = st.session_state.get("ind_dep_layer", "user") or "user"
+                external = st.session_state.get("ind_dep_external", True)
                 yaml_out = generate_depot_yaml({
                     "name": dep_name.strip(),
                     "description": description.strip(),
                     "tags": [t for t in updated_tags if t.strip()],
-                    "layer": layer.strip() or "user",
+                    "layer": layer.strip(),
                     "external": external,
                     "warehouse": warehouse.strip(),
                     "url": url.strip(),
@@ -326,6 +359,23 @@ if origin == "specific" and specific_file:
         if "depot_schemas" not in st.session_state:
             st.session_state.depot_schemas = [""]
 
+        with st.expander("⚙️ Advanced Options"):
+            adv1, adv2 = st.columns(2)
+            with adv1:
+                st.text_input("Workflow Description",
+                    value="Workflow to scan Snowflake database tables and register metadata in Metis.",
+                    key="ind_sc_wf_desc")
+                st.text_input("Stack", value="scanner:2.0", key="ind_sc_stack")
+                st.text_input("Compute", value="runnable-default", key="ind_sc_compute")
+            with adv2:
+                st.text_input("DAG Description",
+                    value="Scans schemas from Snowflake database and registers metadata to Metis.",
+                    key="ind_sc_dag_desc")
+                st.text_input("Run As User", value="metis", key="ind_sc_run_as")
+            inc1, inc2 = st.columns(2)
+            with inc1: st.checkbox("Include Tables", value=True, key="ind_sc_inc_tables")
+            with inc2: st.checkbox("Include Views",  value=True, key="ind_sc_inc_views")
+
         with st.form("ind_scanner_form"):
             st.markdown("#### Workflow Identity")
             w1, w2 = st.columns(2)
@@ -334,17 +384,10 @@ if origin == "specific" and specific_file:
                     placeholder="e.g. scan-sampleobs",
                     help="Convention: scan-{depot-name}")
                 depot_ref = st.text_input("Depot Name *",
-                    placeholder="e.g. sampleobs",
-                    help="The depot this scanner will crawl.")
-            with w2:
-                wf_desc = st.text_input("Workflow Description",
-                    value="Workflow to scan Snowflake database tables and register metadata in Metis.")
-                dag_desc = st.text_input("DAG Description",
-                    value="Scans schemas from Snowflake database and registers metadata to Metis.")
+                    placeholder="e.g. sampleobs")
 
             st.markdown("#### Scanner Tags")
             _scth1, _scth2 = st.columns([5, 1])
-            with _scth1: st.markdown("**Tags**")
             with _scth2:
                 if st.form_submit_button("➕ Add", key="ind_add_stag"):
                     st.session_state.depot_scanner_tags.append(""); st.rerun()
@@ -364,7 +407,6 @@ if origin == "specific" and specific_file:
             st.markdown("#### Schema Filter")
             st.caption("Enter schema names to include — `^...$` anchors are added automatically.")
             _sch1, _sch2 = st.columns([5, 1])
-            with _sch1: st.markdown("**Schemas**")
             with _sch2:
                 if st.form_submit_button("➕ Add", key="ind_add_schema"):
                     st.session_state.depot_schemas.append(""); st.rerun()
@@ -384,16 +426,6 @@ if origin == "specific" and specific_file:
             if filled:
                 st.caption("Will render as: " + "  |  ".join(f"`^{s}$`" for s in filled))
 
-            st.divider()
-            st.markdown("#### Runtime Settings")
-            rt1, rt2, rt3 = st.columns(3)
-            with rt1: stack = st.text_input("Stack", value="scanner:2.0")
-            with rt2: compute = st.text_input("Compute", value="runnable-default")
-            with rt3: run_as_user = st.text_input("Run As User", value="metis")
-            inc1, inc2 = st.columns(2)
-            with inc1: include_tables = st.checkbox("Include Tables", value=True)
-            with inc2: include_views = st.checkbox("Include Views", value=True)
-
             st.markdown(" ")
             sub = st.form_submit_button("Generate YAML", use_container_width=True)
 
@@ -407,38 +439,36 @@ if origin == "specific" and specific_file:
                 st.error("Depot Name is required.")
             else:
                 yaml_out = generate_scanner_yaml({
-                    "workflow_name": workflow_name.strip(),
-                    "description": wf_desc.strip(),
-                    "dag_description": dag_desc.strip(),
-                    "tags": [t for t in updated_scanner_tags if t.strip()],
-                    "depot_name": depot_ref.strip(),
-                    "schemas": [s for s in updated_schemas if s.strip()],
-                    "stack": stack.strip() or "scanner:2.0",
-                    "compute": compute.strip() or "runnable-default",
-                    "run_as_user": run_as_user.strip() or "metis",
-                    "include_tables": include_tables,
-                    "include_views": include_views,
+                    "workflow_name":   workflow_name.strip(),
+                    "description":     st.session_state.get("ind_sc_wf_desc", ""),
+                    "dag_description": st.session_state.get("ind_sc_dag_desc", ""),
+                    "tags":            [t for t in updated_scanner_tags if t.strip()],
+                    "depot_name":      depot_ref.strip(),
+                    "schemas":         [s for s in updated_schemas if s.strip()],
+                    "stack":           st.session_state.get("ind_sc_stack", "scanner:2.0") or "scanner:2.0",
+                    "compute":         st.session_state.get("ind_sc_compute", "runnable-default") or "runnable-default",
+                    "run_as_user":     st.session_state.get("ind_sc_run_as", "metis") or "metis",
+                    "include_tables":  st.session_state.get("ind_sc_inc_tables", True),
+                    "include_views":   st.session_state.get("ind_sc_inc_views", True),
                 })
                 st.code(yaml_out, language="yaml")
                 st.download_button("Download YAML", data=yaml_out,
                     file_name=f"{workflow_name.strip()}.yml", mime="text/yaml",
                     use_container_width=True)
 
+
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 0 — SOURCE SELECTION  (multi-step flow)
+# STEP 0 — SOURCE SELECTION
 # ══════════════════════════════════════════════════════════════════════════════
 elif step == 0:
-
     st.subheader("Select a Source System")
     st.caption("Choose the source you want to connect to DataOS. Each source has its own depot template.")
     st.markdown(" ")
 
     SOURCES = [
-        {"key": "Snowflake",   "desc": "Cloud data warehouse by Snowflake Inc.",          "available": True},
-        {"key": "PostgreSQL",  "desc": "Open-source relational database.",                "available": False}
+        {"key": "Snowflake",  "desc": "Cloud data warehouse by Snowflake Inc.", "available": True},
+        {"key": "PostgreSQL", "desc": "Open-source relational database.",        "available": False},
     ]
-
-    # 4 cards per row
     for row_start in range(0, len(SOURCES), 4):
         cols = st.columns(4)
         for col, src in zip(cols, SOURCES[row_start:row_start + 4]):
@@ -459,6 +489,11 @@ elif step == 0:
                     st.button("Coming Soon", use_container_width=True,
                               key=f"src_{src['key']}", disabled=True)
         st.markdown(" ")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STEP 1 — CREDENTIALS & NAMING
+# ══════════════════════════════════════════════════════════════════════════════
 elif step == 1:
     st.subheader("Step 1 — Credentials & Naming")
     c_ex1, c_ex2 = st.columns([1, 1])
@@ -467,11 +502,25 @@ elif step == 1:
     with c_ex2:
         show_example(st, "Instance Secret RW", EXAMPLE_SECRET_RW)
     st.caption(
-        "The name you enter will be depot name and instance secret names will be generated with -r & -rw as suffixes"
+        "The name you enter will be the depot name. "
         "Secrets will be named `{name}-r` and `{name}-rw`."
     )
     st.markdown(" ")
 
+    # Advanced options — outside form so expander works
+    with st.expander("⚙️ Advanced Options"):
+        adv1, adv2 = st.columns(2)
+        with adv1:
+            st.text_input("Layer", value=st.session_state.get("depot_layer_secret", "user"),
+                key="s1_adv_layer")
+        with adv2:
+            base_preview = st.session_state.get("depot_base_name", "{name}")
+            st.text_input("Secret R Description",
+                value=st.session_state.get("depot_desc_r", f"read instance-secret for {base_preview} snowflake depot"),
+                key="s1_adv_desc_r")
+            st.text_input("Secret RW Description",
+                value=st.session_state.get("depot_desc_rw", f"read-write instance-secret for {base_preview} snowflake depot"),
+                key="s1_adv_desc_rw")
 
     with st.form("depot_step1_form"):
         st.markdown("#### Secret Names")
@@ -481,47 +530,20 @@ elif step == 1:
                 "Instance Secret Name *",
                 value=st.session_state.get("depot_base_name", ""),
                 placeholder="e.g. depot-name",
-                help="This is the depot name. The names for two secrets will be generated with this name - r & rw.",
+                help="Depot name — secrets get -r and -rw suffixes.",
             )
         with c2:
-            layer = st.text_input(
-                "Layer",
-                value=st.session_state.get("depot_layer_secret", "user"),
-            )
-
-        st.divider()
-        st.markdown("#### Snowflake Credentials")
-        st.caption("Stored in both instance secrets (R and RW) with the same values.")
-
-        cr1, cr2 = st.columns(2)
-        with cr1:
             username = st.text_input(
                 "Username *",
                 value=st.session_state.get("depot_username", ""),
                 placeholder="e.g. snowflake_user",
             )
-        with cr2:
-            password = st.text_input(
-                "Password *",
-                value=st.session_state.get("depot_password", ""),
-                type="password",
-                placeholder="Snowflake password",
-            )
 
-        st.divider()
-        st.markdown("#### Secret Descriptions")
-        st.caption("Auto-generated — edit if needed.")
-
-        auto_r  = f"read instance-secret for {base_name} snowflake depot"
-        auto_rw = f"read-write instance-secret for {base_name} snowflake depot"
-
-        desc_r = st.text_input(
-            "Instance Secret R description",
-            value=st.session_state.get("depot_desc_r", auto_r),
-        )
-        desc_rw = st.text_input(
-            "Instance Secret RW description",
-            value=st.session_state.get("depot_desc_rw", auto_rw),
+        password = st.text_input(
+            "Password *",
+            value=st.session_state.get("depot_password", ""),
+            type="password",
+            placeholder="Snowflake password",
         )
 
         st.markdown(" ")
@@ -535,20 +557,24 @@ elif step == 1:
         elif not password.strip():
             st.error("Password is required.")
         else:
+            layer   = st.session_state.get("s1_adv_layer", "user") or "user"
+            desc_r  = st.session_state.get("s1_adv_desc_r", "") or f"read instance-secret for {base_name.strip()} snowflake depot"
+            desc_rw = st.session_state.get("s1_adv_desc_rw", "") or f"read-write instance-secret for {base_name.strip()} snowflake depot"
+
             st.session_state.depot_base_name    = base_name.strip()
-            st.session_state.depot_layer_secret = layer.strip() or "user"
+            st.session_state.depot_layer_secret = layer
             st.session_state.depot_username     = username.strip()
             st.session_state.depot_password     = password
-            st.session_state.depot_desc_r       = desc_r.strip() or auto_r
-            st.session_state.depot_desc_rw      = desc_rw.strip() or auto_rw
+            st.session_state.depot_desc_r       = desc_r
+            st.session_state.depot_desc_rw      = desc_rw
 
             payload = {
                 "name":     base_name.strip(),
-                "layer":    layer.strip() or "user",
+                "layer":    layer,
                 "username": username.strip(),
                 "password": password,
-                "desc_r":   desc_r.strip() or auto_r,
-                "desc_rw":  desc_rw.strip() or auto_rw,
+                "desc_r":   desc_r,
+                "desc_rw":  desc_rw,
             }
             st.session_state.depot_yaml_r  = generate_secret_r_yaml(payload)
             st.session_state.depot_yaml_rw = generate_secret_rw_yaml(payload)
@@ -567,7 +593,6 @@ elif step == 2:
     st.caption("Configure the Snowflake connection. Secret references are auto-filled from Step 1.")
     st.markdown(" ")
 
-    # Show locked secret references
     st.markdown("**Secret references (auto-filled from Step 1)**")
     st.markdown(
         f'<span class="info-pill">Secret R → <strong>{name}-r</strong></span>'
@@ -576,7 +601,18 @@ elif step == 2:
     )
     st.markdown(" ")
 
-    # Add / remove tags outside form
+    # Advanced options — outside form
+    with st.expander("⚙️ Advanced Options"):
+        adv1, adv2, adv3 = st.columns(3)
+        with adv1:
+            st.text_input("Version", value=st.session_state.get("depot_version", "v2alpha"), key="s2_adv_version")
+            st.text_input("Type", value=st.session_state.get("depot_type", "depot"), key="s2_adv_type")
+        with adv2:
+            st.text_input("Layer", value=st.session_state.get("depot_layer_depot", "user"), key="s2_adv_layer")
+        with adv3:
+            st.checkbox("External", value=st.session_state.get("depot_external", True), key="s2_adv_external", help="Always true for Snowflake.")
+
+    # Tag management outside form
     tag_col1, tag_col2 = st.columns([6, 1])
     with tag_col1:
         st.markdown("**Tags** — click ➕ to add")
@@ -585,49 +621,14 @@ elif step == 2:
             st.session_state.depot_tags.append("")
             st.rerun()
 
-
-    with st.expander("See example output — Depot YAML"):
-        st.code("""name: sampleobs
-version: v2alpha
-type: depot
-description: Depot to fetch data from Snowflake datasource
-layer: user
-depot:
-  name: sampleobs
-  type: snowflake
-  external: true
-  secrets:
-    - name: sampleobs-r
-      allkeys: true
-    - name: sampleobs-rw
-      allkeys: true
-  snowflake:
-    warehouse: COMPUTE_WH
-    url: myorg.snowflakecomputing.com
-    database: PROD_DB
-    account: myorg-myaccount""", language="yaml")
-
     with st.form("depot_step2_form"):
-        st.markdown("#### 🏷️ Metadata")
-        m1, m2 = st.columns(2)
-        with m1:
-            description = st.text_input(
-                "Description *",
-                value=st.session_state.get("depot_description", "Depot to fetch data from Snowflake datasource"),
-                placeholder="e.g. Depot to fetch data from Snowflake datasource",
-            )
-            layer_depot = st.text_input(
-                "Layer",
-                value=st.session_state.get("depot_layer_depot", "user"),
-            )
-        with m2:
-            external = st.checkbox(
-                "External",
-                value=st.session_state.get("depot_external", True),
-                help="Set to true for external data sources (standard for Snowflake).",
-            )
+        st.markdown("#### Metadata")
+        description = st.text_input(
+            "Description *",
+            value=st.session_state.get("depot_description", "Depot to fetch data from Snowflake datasource"),
+            placeholder="e.g. Depot to fetch data from Snowflake datasource",
+        )
 
-        st.divider()
         st.markdown("**Tags**")
         updated_tags = []
         for i, tag in enumerate(st.session_state.depot_tags):
@@ -648,27 +649,16 @@ depot:
         st.markdown("#### ❄️ Snowflake Connection")
         sf1, sf2 = st.columns(2)
         with sf1:
-            warehouse = st.text_input(
-                "Warehouse *",
-                value=st.session_state.get("depot_warehouse", ""),
-                placeholder="e.g. COMPUTE_WH",
-            )
-            url = st.text_input(
-                "URL *",
+            warehouse = st.text_input("Warehouse *",
+                value=st.session_state.get("depot_warehouse", ""), placeholder="e.g. COMPUTE_WH")
+            url = st.text_input("URL *",
                 value=st.session_state.get("depot_url", ""),
-                placeholder="e.g. myorg.snowflakecomputing.com",
-            )
+                placeholder="e.g. myorg.snowflakecomputing.com")
         with sf2:
-            database = st.text_input(
-                "Database *",
-                value=st.session_state.get("depot_database", ""),
-                placeholder="e.g. PROD_DB",
-            )
-            account = st.text_input(
-                "Account *",
-                value=st.session_state.get("depot_account", ""),
-                placeholder="e.g. myorg-myaccount",
-            )
+            database = st.text_input("Database *",
+                value=st.session_state.get("depot_database", ""), placeholder="e.g. PROD_DB")
+            account = st.text_input("Account *",
+                value=st.session_state.get("depot_account", ""), placeholder="e.g. myorg-myaccount")
 
         st.markdown(" ")
         submit2 = st.form_submit_button("Next →", use_container_width=True)
@@ -685,9 +675,16 @@ depot:
         if errors:
             for e in errors: st.error(e)
         else:
+            layer_depot = st.session_state.get("s2_adv_layer", "user") or "user"
+            external    = st.session_state.get("s2_adv_external", True)
+            version     = st.session_state.get("s2_adv_version", "v2alpha") or "v2alpha"
+            dtype       = st.session_state.get("s2_adv_type", "depot") or "depot"
+
             st.session_state.depot_description  = description.strip()
-            st.session_state.depot_layer_depot  = layer_depot.strip() or "user"
+            st.session_state.depot_layer_depot  = layer_depot
             st.session_state.depot_external     = external
+            st.session_state.depot_version      = version
+            st.session_state.depot_type         = dtype
             st.session_state.depot_warehouse    = warehouse.strip()
             st.session_state.depot_url          = url.strip()
             st.session_state.depot_database     = database.strip()
@@ -695,9 +692,11 @@ depot:
 
             st.session_state.depot_yaml_depot = generate_depot_yaml({
                 "name":        name,
+                "version":     version,
+                "type":        dtype,
                 "description": description.strip(),
                 "tags":        [t for t in updated_tags if t.strip()],
-                "layer":       layer_depot.strip() or "user",
+                "layer":       layer_depot,
                 "external":    external,
                 "warehouse":   warehouse.strip(),
                 "url":         url.strip(),
@@ -706,7 +705,8 @@ depot:
             })
             st.session_state.depot_step = 3
             st.rerun()
-
+            st.session_state.depot_step = 3
+            st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -720,7 +720,6 @@ elif step == 3:
     st.caption("Configure the metadata scanner workflow for this Snowflake depot.")
     st.markdown(" ")
 
-    # Show locked depot reference
     st.markdown("**Depot reference (auto-filled)**")
     st.markdown(
         f'<span class="info-pill">dataos://<strong>{name}</strong></span>',
@@ -728,8 +727,31 @@ elif step == 3:
     )
     st.markdown(" ")
 
+    # Advanced options — outside form
+    with st.expander("⚙️ Advanced Options"):
+        adv1, adv2, adv3 = st.columns(3)
+        with adv1:
+            st.text_input("Version", value=st.session_state.get("scanner_version", "v1"), key="s3_adv_version")
+            st.text_input("Type", value=st.session_state.get("scanner_type", "workflow"), key="s3_adv_type")
+            st.text_input("Stack", value=st.session_state.get("depot_stack", "scanner:2.0"), key="s3_adv_stack")
+            st.text_input("Compute", value=st.session_state.get("depot_compute", "runnable-default"), key="s3_adv_compute")
+        with adv2:
+            st.text_input("Workflow Description",
+                value=st.session_state.get("depot_wf_description", "Workflow to scan Snowflake database tables and register metadata in Metis."),
+                key="s3_adv_wf_desc")
+            st.text_input("DAG Step Description",
+                value=st.session_state.get("depot_dag_description", "Scans schemas from Snowflake database and registers metadata to Metis."),
+                key="s3_adv_dag_desc")
+        with adv3:
+            st.text_input("Run As User", value=st.session_state.get("depot_run_as_user", "metis"), key="s3_adv_run_as")
+        inc1, inc2 = st.columns(2)
+        with inc1:
+            st.checkbox("Include Tables", value=st.session_state.get("depot_include_tables", True), key="s3_adv_inc_tables")
+        with inc2:
+            st.checkbox("Include Views", value=st.session_state.get("depot_include_views", True), key="s3_adv_inc_views")
+
     # Add / remove buttons outside form
-    btn1, btn2, btn3 = st.columns(3)
+    btn1, btn2 = st.columns(2)
     with btn1:
         if st.button("➕ Scanner Tag", key="depot_add_stag"):
             st.session_state.depot_scanner_tags.append("")
@@ -739,52 +761,12 @@ elif step == 3:
             st.session_state.depot_schemas.append("")
             st.rerun()
 
-
-    with st.expander("See example output — Scanner YAML"):
-        st.code("""version: v1
-name: scan-sampleobs
-type: workflow
-description: Workflow to scan Snowflake database tables and register metadata in Metis.
-workflow:
-  dag:
-    - name: scan-sampleobs
-      description: Scans schemas from Snowflake database and registers metadata to Metis.
-      spec:
-        stack: scanner:2.0
-        tags:
-          - scanner
-        compute: runnable-default
-        runAsUser: metis
-        stackSpec:
-          depot: dataos://sampleobs
-          sourceConfig:
-            config:
-              includeTables: true
-              includeViews: true
-              schemaFilterPattern:
-                includes:
-                  - ^retail$""", language="yaml")
-
     with st.form("depot_step3_form"):
         st.markdown("#### Workflow Identity")
-        w1, w2 = st.columns(2)
         default_wf_name = f"{name}-snowflake-scanner"
-        with w1:
-            workflow_name = st.text_input(
-                "Workflow Name *",
-                value=st.session_state.get("depot_workflow_name", default_wf_name),
-            )
-        with w2:
-            wf_description = st.text_input(
-                "Workflow Description",
-                value=st.session_state.get("depot_wf_description", "Workflow to scan Snowflake database tables and register metadata in Metis."),
-                placeholder=f"Workflow to scan Snowflake database tables and register metadata in Metis.",
-            )
-
-        dag_description = st.text_input(
-            "DAG Step Description",
-            value=st.session_state.get("depot_dag_description", "Scans schemas from Snowflake database and registers metadata to Metis."),
-            placeholder=f"Scans schemas from Snowflake database and registers metadata to Metis.",
+        workflow_name = st.text_input(
+            "Workflow Name *",
+            value=st.session_state.get("depot_workflow_name", default_wf_name),
         )
 
         st.markdown("**Scanner Tags**")
@@ -806,7 +788,6 @@ workflow:
         st.divider()
         st.markdown("#### Schema Filter")
         st.caption("Enter schema names to include — `^...$` anchors are added automatically.")
-
         updated_schemas = []
         for i, schema in enumerate(st.session_state.depot_schemas):
             sc1, sc2 = st.columns([5, 1])
@@ -822,43 +803,9 @@ workflow:
                     st.session_state.depot_schemas.pop(i)
                     st.rerun()
 
-        # Show preview of what the regex will look like
         filled = [s.strip() for s in updated_schemas if s.strip()]
         if filled:
             st.caption("Will render as: " + "  |  ".join(f"`^{s}$`" for s in filled))
-
-        st.divider()
-        st.markdown("#### Runtime Settings")
-        st.caption("These are standard defaults — edit only if needed.")
-
-        rt1, rt2, rt3 = st.columns(3)
-        with rt1:
-            stack = st.text_input(
-                "Stack",
-                value=st.session_state.get("depot_stack", "scanner:2.0"),
-            )
-        with rt2:
-            compute = st.text_input(
-                "Compute",
-                value=st.session_state.get("depot_compute", "runnable-default"),
-            )
-        with rt3:
-            run_as_user = st.text_input(
-                "Run As User",
-                value=st.session_state.get("depot_run_as_user", "metis"),
-            )
-
-        inc1, inc2 = st.columns(2)
-        with inc1:
-            include_tables = st.checkbox(
-                "Include Tables",
-                value=st.session_state.get("depot_include_tables", True),
-            )
-        with inc2:
-            include_views = st.checkbox(
-                "Include Views",
-                value=st.session_state.get("depot_include_views", True),
-            )
 
         st.markdown(" ")
         submit3 = st.form_submit_button("Next →", use_container_width=True)
@@ -870,27 +817,41 @@ workflow:
         if not workflow_name.strip():
             st.error("Workflow Name is required.")
         else:
+            wf_desc  = st.session_state.get("s3_adv_wf_desc",  "Workflow to scan Snowflake database tables and register metadata in Metis.")
+            dag_desc = st.session_state.get("s3_adv_dag_desc", "Scans schemas from Snowflake database and registers metadata to Metis.")
+            stack    = st.session_state.get("s3_adv_stack",    "scanner:2.0") or "scanner:2.0"
+            compute  = st.session_state.get("s3_adv_compute",  "runnable-default") or "runnable-default"
+            run_as   = st.session_state.get("s3_adv_run_as",   "metis") or "metis"
+            version  = st.session_state.get("s3_adv_version",  "v1") or "v1"
+            dtype    = st.session_state.get("s3_adv_type",     "workflow") or "workflow"
+            inc_tbl  = st.session_state.get("s3_adv_inc_tables", True)
+            inc_vw   = st.session_state.get("s3_adv_inc_views",  True)
+
             st.session_state.depot_workflow_name   = workflow_name.strip()
-            st.session_state.depot_wf_description  = wf_description.strip()
-            st.session_state.depot_dag_description = dag_description.strip()
-            st.session_state.depot_stack           = stack.strip() or "scanner:2.0"
-            st.session_state.depot_compute         = compute.strip() or "runnable-default"
-            st.session_state.depot_run_as_user     = run_as_user.strip() or "metis"
-            st.session_state.depot_include_tables  = include_tables
-            st.session_state.depot_include_views   = include_views
+            st.session_state.depot_wf_description  = wf_desc
+            st.session_state.depot_dag_description = dag_desc
+            st.session_state.depot_stack           = stack
+            st.session_state.depot_compute         = compute
+            st.session_state.depot_run_as_user     = run_as
+            st.session_state.scanner_version       = version
+            st.session_state.scanner_type          = dtype
+            st.session_state.depot_include_tables  = inc_tbl
+            st.session_state.depot_include_views   = inc_vw
 
             st.session_state.depot_yaml_scanner = generate_scanner_yaml({
                 "workflow_name":   workflow_name.strip(),
-                "description":     wf_description.strip() or f"Workflow to scan Snowflake database tables and register metadata in Metis.",
-                "dag_description": dag_description.strip() or f"Scans schemas from Snowflake database and registers metadata to Metis.",
+                "version":         version,
+                "type":            dtype,
+                "description":     wf_desc,
+                "dag_description": dag_desc,
                 "tags":            [t for t in updated_scanner_tags if t.strip()],
                 "depot_name":      name,
                 "schemas":         [s for s in updated_schemas if s.strip()],
-                "stack":           stack.strip() or "scanner:2.0",
-                "compute":         compute.strip() or "runnable-default",
-                "run_as_user":     run_as_user.strip() or "metis",
-                "include_tables":  include_tables,
-                "include_views":   include_views,
+                "stack":           stack,
+                "compute":         compute,
+                "run_as_user":     run_as,
+                "include_tables":  inc_tbl,
+                "include_views":   inc_vw,
             })
             st.session_state.depot_step = 4
             st.rerun()
@@ -911,60 +872,34 @@ elif step == 4:
     yaml_depot   = st.session_state.get("depot_yaml_depot", "")
     yaml_scanner = st.session_state.get("depot_yaml_scanner", "")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Secret R",
-        "Secret RW",
-        "Depot",
-        "Scanner",
-    ])
+    tab1, tab2, tab3, tab4 = st.tabs(["Secret R", "Secret RW", "Depot", "Scanner"])
 
     with tab1:
         st.markdown(f"**`{name}-r.yml`**")
         st.code(yaml_r, language="yaml")
-        st.download_button(
-            "⬇ Download Secret R",
-            data=yaml_r,
-            file_name=f"{name}-r.yml",
-            mime="text/yaml",
-            use_container_width=True,
-        )
+        st.download_button("⬇ Download Secret R", data=yaml_r,
+            file_name=f"{name}-r.yml", mime="text/yaml", use_container_width=True)
 
     with tab2:
         st.markdown(f"**`{name}-rw.yml`**")
         st.code(yaml_rw, language="yaml")
-        st.download_button(
-            "⬇ Download Secret RW",
-            data=yaml_rw,
-            file_name=f"{name}-rw.yml",
-            mime="text/yaml",
-            use_container_width=True,
-        )
+        st.download_button("⬇ Download Secret RW", data=yaml_rw,
+            file_name=f"{name}-rw.yml", mime="text/yaml", use_container_width=True)
 
     with tab3:
         st.markdown(f"**`{name}-depot.yml`**")
         st.code(yaml_depot, language="yaml")
-        st.download_button(
-            "⬇ Download Depot",
-            data=yaml_depot,
-            file_name=f"{name}-depot.yml",
-            mime="text/yaml",
-            use_container_width=True,
-        )
+        st.download_button("⬇ Download Depot", data=yaml_depot,
+            file_name=f"{name}-depot.yml", mime="text/yaml", use_container_width=True)
 
     with tab4:
         st.markdown(f"**`{name}-scanner.yml`**")
         st.code(yaml_scanner, language="yaml")
-        st.download_button(
-            "⬇ Download Scanner",
-            data=yaml_scanner,
-            file_name=f"{name}-scanner.yml",
-            mime="text/yaml",
-            use_container_width=True,
-        )
+        st.download_button("⬇ Download Scanner", data=yaml_scanner,
+            file_name=f"{name}-scanner.yml", mime="text/yaml", use_container_width=True)
 
     st.divider()
 
-    # ── ZIP download ──────────────────────────────────────────────────────────
     import zipfile, io
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w") as zf:
@@ -976,21 +911,17 @@ elif step == 4:
 
     st.download_button(
         f"Download All as ZIP  ({name}-depot.zip)",
-        data=zip_buf,
-        file_name=f"{name}-depot.zip",
-        mime="application/zip",
-        use_container_width=True,
+        data=zip_buf, file_name=f"{name}-depot.zip",
+        mime="application/zip", use_container_width=True,
     )
 
     st.markdown(" ")
 
     if origin == "cadp_full":
-        # Mark depot complete in CADP flow, pass name forward
         st.session_state["cadp_depot_name"] = name
         if "cadp_completed_steps" not in st.session_state:
             st.session_state.cadp_completed_steps = set()
         st.session_state.cadp_completed_steps.add(1)
-
         st.divider()
         st.success("Depot files ready. Return to the CADP flow to continue.")
         if st.button("Back to CADP Flow →", use_container_width=True, type="primary"):
@@ -998,12 +929,10 @@ elif step == 4:
             st.switch_page("pages/cadp_flow.py")
 
     elif origin == "sadp_full":
-        # Mark depot complete in SADP flow, pass name forward
         st.session_state["sadp_depot_name"] = name
         if "sadp_completed_steps" not in st.session_state:
             st.session_state.sadp_completed_steps = set()
         st.session_state.sadp_completed_steps.add(1)
-
         st.divider()
         st.success("Depot files ready. Return to the SADP flow to continue.")
         if st.button("Back to SADP Flow →", use_container_width=True, type="primary"):
@@ -1015,7 +944,6 @@ elif step == 4:
             clear_depot_state()
             st.session_state.home_screen = "specific"
             st.switch_page("app.py")
-
     else:
         if st.button("← Back to Home"):
             clear_depot_state()

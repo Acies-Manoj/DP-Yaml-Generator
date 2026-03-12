@@ -36,10 +36,13 @@ instance-secret:
 
 
 def generate_depot_yaml(d: dict) -> str:
+    version = d.get("version", "v2alpha") or "v2alpha"
+    dtype   = d.get("type", "depot") or "depot"
+
     lines = []
     lines.append(f"name: {d['name']}")
-    lines.append("version: v2alpha")
-    lines.append("type: depot")
+    lines.append(f"version: {version}")
+    lines.append(f"type: {dtype}")
     lines.append(f"description: {d['description']}")
 
     if d.get("tags"):
@@ -68,10 +71,13 @@ def generate_depot_yaml(d: dict) -> str:
 
 
 def generate_scanner_yaml(d: dict) -> str:
+    version = d.get("version", "v1") or "v1"
+    dtype   = d.get("type", "workflow") or "workflow"
+
     lines = []
-    lines.append("version: v1")
+    lines.append(f"version: {version}")
     lines.append(f"name: {d['workflow_name']}")
-    lines.append("type: workflow")
+    lines.append(f"type: {dtype}")
 
     if d.get("tags"):
         lines.append("tags:")
