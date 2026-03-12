@@ -1,0 +1,41 @@
+{
+  "table_description": "The branch table contains information about different branches, including their identifiers, locations, and office details. It serves as a reference for analyzing branch-specific data.",
+  "columns": [
+    {
+      "name": "branch_id",
+      "description": "The branch_id column uniquely identifies each record in the table, serving as a primary key for branch-level analysis."
+    },
+    {
+      "name": "gsscore_servicebranchnumber",
+      "description": "The gsscore_servicebranchnumber column stores a string value that may represent a service branch number, potentially used for identifying or categorizing branches."
+    },
+    {
+      "name": "region_code",
+      "description": "The region_code column is a primary key that uniquely identifies each record in conjunction with other primary keys, and it may represent a code for the region where the branch is located."
+    },
+    {
+      "name": "region",
+      "description": "The region column stores a string value representing the region where the branch is located, which can be used for geographical analysis or filtering."
+    },
+    {
+      "name": "subregion_code",
+      "description": "The subregion_code column is a primary key that uniquely identifies each record in conjunction with other primary keys, and it may represent a code for the subregion within a region where the branch is located."
+    },
+    {
+      "name": "subregion",
+      "description": "The subregion column stores a string value representing the subregion within a region where the branch is located, which can be used for more detailed geographical analysis or filtering."
+    },
+    {
+      "name": "gbo",
+      "description": "The gbo column stores a string value that may represent a geographical or organizational code, but its specific purpose is ambiguous without additional context."
+    },
+    {
+      "name": "office_code",
+      "description": "The office_code column is a primary key that uniquely identifies each record in conjunction with other primary keys, and it may represent a code for the office where the branch is located or associated with."
+    },
+    {
+      "name": "office_name",
+      "description": "The office_name column stores a string value representing the name of the office where the branch is located or associated with, which can be used for identifying or analyzing specific offices."
+    }
+  ]
+}
