@@ -11,7 +11,7 @@ load_global_css()
 # ─────────────────────────────────────────────────────────────────────────────
 STEPS = {
     1: {"label": "Depot",          "optional": False},
-    2: {"label": "Quality Checks", "optional": True},
+    2: {"label": "Quality Checks", "optional": False},
     3: {"label": "Bundle",         "optional": False},
     4: {"label": "Spec",           "optional": False},
     5: {"label": "Scanner",        "optional": False},
